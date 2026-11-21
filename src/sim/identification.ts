@@ -4,6 +4,7 @@ import { REG_BY_REG } from './data/registry'
 import { distNm, distToPolyline, fmtHM, pointInPoly } from './geo'
 import { REGIONS } from './data/fixes'
 import { say } from './comms'
+import { award } from './combat'
 import type { Category, FlightPlan, GameState, Track } from './types'
 
 interface Index { bySq: Map<string, FlightPlan>; byCall: Map<string, FlightPlan>; sqCount: Map<string, number>; callCount: Map<string, number> }
@@ -129,12 +130,14 @@ export function declare(st: GameState, trackId: string, cat: Category | 'CLEAR' 
   else if (effective === 'UNRESOLVED') verdict = !truth.legit || prevCat === 'UNRESOLVED' ? 'PARTIAL' : 'PARTIAL'
   else verdict = 'PARTIAL'
   if (verdict === 'RIGHT' && effective === 'SUSPICIOUS') st.flags.susRight = ((st.flags.susRight as number) ?? 0) + 1
+  if (verdict === 'RIGHT') st.flags.coinsId = 1
   if (verdict === 'RIGHT') st.score.idCorrect++
   else if (verdict === 'PARTIAL') { st.score.idCorrect += 0.5; }
   else if (verdict === 'WRONG') { st.score.idWrong++; st.score.log.push(`${fmtHM(st.t)} WRONG ID on ${label(st, tr)} (${truth.note})`) }
   else { st.score.falseAlarms++ }
   const msg: Record<string, string> = { RIGHT: 'Classification consistent with later evidence.', PARTIAL: 'Classification accepted — limited verification.', WRONG: `Classification contradicted by ground truth: ${truth.note}.`, FALSE_ALARM: 'Classified suspicious; aircraft later found to be routine.' }
   tr.log.push(`${st.t}|DEBRIEF: ${msg[verdict]}`)
+  if (verdict === 'RIGHT') award(st, 8, 'Correct identification', tr); else if (verdict === 'PARTIAL') award(st, 3, 'Identification', tr); else if (verdict === 'WRONG') award(st, -15, 'Wrong identification', tr); else award(st, -5, 'False alarm', tr)
   // incidents attached to the entity can be resolved by correct classification
   for (const inc of st.incidents) if (inc.entityId === ac.id && inc.status === 'OPEN' && (inc.kind === 'UNKNOWN_CONTACT' || inc.kind === 'STRAYED' || inc.kind === 'ANOMALY' || inc.kind === 'MISSING_PLAN' || inc.kind === 'CLONED_ID' || inc.kind === 'XPDR_FAULT')) inc.actioned = true
 }

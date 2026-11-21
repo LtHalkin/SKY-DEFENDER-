@@ -17,7 +17,11 @@ npm run build      # static output in dist/
 - `scripts/build-geography.mjs` regenerates the coastline data.
 
 ## Modes
-The game is a simple arcade-style 10-minute shift (the earlier full workstation UI was removed; the full simulation engine remains in `src/sim`). Optional ElevenLabs radio voices: VOICE button, paste your own API key (stored only in your browser).
+Arcade-style 10-minute shifts (40 sim-minutes at 4x) with progression:
+- **Home / Shop / Hangar / Records / Settings.** Progress saves automatically in the browser (`localStorage`), with export/import save codes.
+- **Shop:** 8 interceptors (Hawk → EF2000), tankers, E-3D, three SAM battery types placed at chosen sites, and upgrades (radar range, scramble speed, extra missiles, SAM reload). Items unlock by level.
+- **Combat:** hostile raids head for bases and cities. Weapons stay tight until a target is confirmed hostile (a jet's visual ID, or refusal of a warning); civil aircraft can never be engaged. Interceptors and SAM batteries fire missiles with per-type range and hit chance. Raids that reach their target cost airspace integrity and coins.
+- Optional ElevenLabs radio voices: VOICE button, paste your own API key (stored only in your browser).
 
 ## Notes
 - Aircraft register: 440+ generated records; airways/fixes are invented but plausible, not real AIP data.

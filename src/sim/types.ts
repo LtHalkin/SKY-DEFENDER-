@@ -5,7 +5,7 @@ export type Category = 'UNKNOWN' | 'UNCORRELATED' | 'CORRELATED' | 'IDENTIFIED' 
 export type Role = 'AIRLINER' | 'REGIONAL' | 'CARGO' | 'GA' | 'BIZJET' | 'OFFSHORE' | 'POLICE' | 'AMBULANCE' | 'COASTGUARD' | 'MIL' | 'FOREIGN' | 'PHENOM'
 export type Intent =
   | 'normal' | 'commsFail' | 'emergency' | 'unlawful' | 'noPlan' | 'xpdrFault' | 'diverting' | 'cloned'
-  | 'strayed' | 'foreignState' | 'phenomenon' | 'friendly' | 'vfrLocal'
+  | 'strayed' | 'foreignState' | 'phenomenon' | 'friendly' | 'vfrLocal' | 'hostile'
 export interface Wp { name: string; lat: number; lon: number }
 
 export interface Truth { intent: Intent; legit: boolean; note: string; benign: boolean }
@@ -41,6 +41,8 @@ export interface Aircraft {
   cruiseKt: number; maxAlt: number; climbFpm: number; turnRate: number
   emergency?: { kind: '7700' | '7600' | '7500'; since: number; divertTo?: string }
   deviateAt?: number
+  hostile?: boolean; complied?: boolean; warnedAt?: number
+  raid?: { name: string; lat: number; lon: number; value: number; breached?: boolean }
 }
 
 export interface FlightPlan {
@@ -78,6 +80,7 @@ export interface Track {
   intelLinks: string[]
   log: string[]
   watch: boolean
+  hostile?: boolean; noReply?: boolean; complied?: boolean
 }
 
 export type RadarStatus = 'OPERATIONAL' | 'DEGRADED' | 'OFFLINE' | 'MAINTENANCE'
@@ -106,6 +109,7 @@ export interface Asset {
   defect: string | null; busyUntil: number; opId: string | null
   cargo?: { kind: 'FUEL' | 'SPARES'; qty: number; to: string } | null
   launchAt?: number
+  missiles: number; maxMissiles: number
   hold?: boolean
   bingoWarned?: boolean; lowWarned?: boolean
   ac: Aircraft | null
@@ -119,7 +123,7 @@ export interface Airfield {
   alert: { kind: string; until: number } | null
 }
 
-export type OpType = 'IDENTIFY' | 'MONITOR' | 'SHADOW' | 'RETURN' | 'PATROL' | 'REFUEL' | 'FERRY' | 'SUPPLY'
+export type OpType = 'IDENTIFY' | 'MONITOR' | 'SHADOW' | 'RETURN' | 'PATROL' | 'REFUEL' | 'FERRY' | 'SUPPLY' | 'ENGAGE'
 export type OpStatus = 'PLANNED' | 'ACTIVE' | 'COMPLETE' | 'ABORTED' | 'FAILED'
 export interface Operation {
   id: string; type: OpType; status: OpStatus
@@ -147,7 +151,7 @@ export interface IntelReport {
 }
 export type IncidentKind =
   | 'EMERGENCY_7700' | 'COMMS_7600' | 'UNLAWFUL_7500' | 'UNKNOWN_CONTACT' | 'PLAN_DEVIATION' | 'FOREIGN_STATE'
-  | 'CLONED_ID' | 'XPDR_FAULT' | 'RADAR_FAULT' | 'ANOMALY' | 'SAR' | 'MISSING_PLAN' | 'STRAYED'
+  | 'CLONED_ID' | 'XPDR_FAULT' | 'RADAR_FAULT' | 'ANOMALY' | 'SAR' | 'MISSING_PLAN' | 'STRAYED' | 'HOSTILE'
 export interface Incident {
   id: string; kind: IncidentKind; title: string; severity: 1 | 2 | 3
   entityId: string | null; radarId?: string
@@ -187,6 +191,11 @@ export interface GameConfig {
   radarFaults: boolean
   intel: boolean
   fastStart: boolean
+  fleet?: { id: string; typeId: string; base: string }[]
+  batteries?: { id: string; typeId: string; site: string }[]
+  upgrades?: Record<string, number>
+  hostiles?: boolean
+  level?: number
 }
 
 export interface GameState {
@@ -224,7 +233,15 @@ export interface GameState {
   objectives: Objective[]
   flags: Record<string, number | string | boolean>
   stats: { spawned: number; removed: number; maxTracks: number }
+  batteries: Battery[]
+  missiles: Missile[]
+  airspace: number
+  coins: number
+  splashes: number
+  coinLog: { t: number; n: number; why: string }[]
 }
+export interface Battery { id: string; typeId: string; name: string; site: string; lat: number; lon: number; range: number; missiles: number; maxMissiles: number; reloadSec: number; readyAt: number; pk: number; auto: boolean }
+export interface Missile { id: number; lat: number; lon: number; alt: number; tgt: string; by: string; pk: number; speed: number; born: number; kind: 'AAM' | 'SAM'; trail: { lat: number; lon: number }[] }
 export interface PendingIncident { entityId: string; kind: IncidentKind; title: string; severity: 1 | 2 | 3; needs: string; deadlineSec: number; announce: string; created: number; intent: Intent }
 export interface Objective { id: string; text: string; done: boolean; failed: boolean; optional?: boolean; progress?: string }
 export type SimEvent =
@@ -233,3 +250,4 @@ export type SimEvent =
   | { type: 'newTrack'; trackId: string }
   | { type: 'emergency'; trackId: string; code: string }
   | { type: 'ui'; name: string }
+  | { type: 'fx'; kind: 'launch' | 'splash' | 'miss' | 'breach' | 'coins'; lat: number; lon: number; n?: number; text?: string }

@@ -38,6 +38,25 @@ class AudioEngine {
   alarm() { for (let i = 0; i < 3; i++) { this.tone(960, 0.18, 'square', 0.12, i * 0.4); this.tone(720, 0.18, 'square', 0.12, i * 0.4 + 0.2) } }
   warble() { for (let i = 0; i < 4; i++) this.tone(i % 2 ? 520 : 780, 0.12, 'sawtooth', 0.08, i * 0.13) }
   click() { this.noise(0.05, 0.06) }
+  launch() {
+    if (!this.sfxOn || this.volume === 0) return
+    const c = this.ensure(); if (!c) return
+    const n = Math.floor(c.sampleRate * 0.9), b = c.createBuffer(1, n, c.sampleRate), d = b.getChannelData(0)
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.min(1, i / 800) * (1 - i / n)
+    const s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain()
+    f.type = 'bandpass'; f.frequency.setValueAtTime(400, c.currentTime); f.frequency.exponentialRampToValueAtTime(3000, c.currentTime + 0.8); g.gain.value = 0.25 * this.volume
+    s.buffer = b; s.connect(f).connect(g).connect(c.destination); s.start()
+  }
+  boom() {
+    if (!this.sfxOn || this.volume === 0) return
+    const c = this.ensure(); if (!c) return
+    const o = c.createOscillator(), g = c.createGain(); o.type = 'sine'
+    o.frequency.setValueAtTime(110, c.currentTime); o.frequency.exponentialRampToValueAtTime(30, c.currentTime + 1.2)
+    g.gain.setValueAtTime(0.5 * this.volume, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 1.3)
+    o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 1.4); this.noise(0.6, 0.2)
+  }
+  coin() { this.tone(1320, 0.07, 'square', 0.04); this.tone(1760, 0.12, 'square', 0.04, 0.07) }
+  ui() { this.tone(900, 0.04, 'square', 0.03) }
   speak(m: Message) {
     if (!this.voiceOn || !m.speak || this.volume === 0) return
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return

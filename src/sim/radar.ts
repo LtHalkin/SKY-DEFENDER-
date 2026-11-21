@@ -9,6 +9,8 @@ export function makeRadars(st: GameState): Radar[] {
     ...d, status: st.cfg.radarOff.includes(d.id) ? 'OFFLINE' : 'OPERATIONAL', condition: st.rng.range(86, 100), interference: 0, angle: d.phase,
     hits: 0, lastHit: 0, repairUntil: 0, repairTeam: false, forcedOffline: st.cfg.radarOff.includes(d.id), note: st.cfg.radarOff.includes(d.id) ? 'Offline at start of watch' : 'Nominal',
   }))
+  const boost = 1 + 0.1 * (st.cfg.upgrades?.radar ?? 0)
+  for (const r of out) { r.primaryRange = Math.round(r.primaryRange * boost); r.secondaryRange = Math.round(r.secondaryRange * boost) }
   // airborne platforms: positions follow the assets
   for (const a of Object.values(st.assets)) if (a.typeId === 'E3D') out.push({
     id: 'AEW-' + a.tail, name: `E-3D ${a.tail}`, lat: 0, lon: 0, antennaFt: 29000, primaryRange: 230, secondaryRange: 250, sweepSec: 10, phase: 30 + out.length * 17, wxSens: 0.15,

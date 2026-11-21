@@ -20,8 +20,8 @@ export function ackIncident(st: GameState, id: string) {
 export function closeIncident(st: GameState, inc: Incident, status: 'RESOLVED' | 'FAILED' | 'STOOD DOWN', result: string) {
   if (inc.closed !== null) return
   inc.status = status; inc.closed = st.t; inc.result = result; inc.log.push(`${fmtHM(st.t)} ${status}: ${result}`)
-  if (status === 'RESOLVED') { st.score.incidentsHandled += inc.acked ? 1 : 0.5 ; st.score.bonus += inc.severity * 2 }
-  else if (status === 'FAILED') { st.score.incidentsFailed++; st.score.bonus -= inc.severity * 4; say(st, { channel: 'OPS', from: 'WATCH SUPERVISOR', to: 'OPS', text: `Incident ${inc.id} ${inc.title} — not handled in time.`, voice: 'OPS', sev: 'URGENT', ref: inc.id, refKind: 'incident' }) }
+  if (status === 'RESOLVED') { st.score.incidentsHandled += inc.acked ? 1 : 0.5 ; st.score.bonus += inc.severity * 2; if (inc.kind !== 'HOSTILE') { st.coins += 10 * inc.severity; st.coinLog.push({ t: st.t, n: 10 * inc.severity, why: 'Incident handled' }) } }
+  else if (status === 'FAILED') { st.score.incidentsFailed++; st.score.bonus -= inc.severity * 4; st.coins -= 8 * inc.severity; st.coinLog.push({ t: st.t, n: -8 * inc.severity, why: 'Incident failed' }); say(st, { channel: 'OPS', from: 'WATCH SUPERVISOR', to: 'OPS', text: `Incident ${inc.id} ${inc.title} — not handled in time.`, voice: 'OPS', sev: 'URGENT', ref: inc.id, refKind: 'incident' }) }
 }
 export const incidentsFor = (st: GameState, entityId: string) => st.incidents.filter((i) => i.entityId === entityId && i.closed === null)
 export function resolveFor(st: GameState, entityId: string, kinds: IncidentKind[] | null, result: string) {

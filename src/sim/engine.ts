@@ -13,6 +13,7 @@ import { assessIntel, directorStep, dispatchEngineers, eventScheduled, monitorIn
 import { newLedger } from './scoring'
 import { say, rt } from './comms'
 import { evaluateObjectives, scenarioScheduled, setupScenario } from './scenarios'
+import { hostileDirector, initBatteries, samFire, scheduledCombat, spawnRaid, stepCombat, warn } from './combat'
 
 export type Command =
   | { c: 'declare'; trackId: string; cat: Category | 'CLEAR' | 'CLUTTER' }
@@ -25,6 +26,7 @@ export type Command =
   | { c: 'watch'; trackId: string; on: boolean }
   | { c: 'spawn'; event: string }
   | { c: 'closeAirfield'; icao: string; open: boolean }
+  | { c: 'warn'; trackId: string } | { c: 'samFire'; batteryId: string; trackId: string } | { c: 'samAuto'; batteryId: string; on: boolean } | { c: 'raid'; size: number }
 
 export const defaultConfig = (over: Partial<GameConfig> = {}): GameConfig => ({
   mode: 'COMBAT', seed: 1998, startHour: 6, traffic: 1, weather: 'CLEAR', complexity: 0.6, radarOff: [], incidents: true, tension0: 0.03, prepSeconds: 0, maxAssetsDown: 0, growth: true,
@@ -38,10 +40,12 @@ export function createState(cfg: GameConfig): GameState {
     radars: [], weather: null as never, assets: {}, airfields: {}, ops: {}, messages: [], intel: [], incidents: [], score: newLedger(), tension: cfg.tension0,
     engineersFree: 3, engineersTotal: 3, nextSpawn: 0, nextEvent: startT + (cfg.mode === 'INSTANT' ? 20 : 420), nextIntel: startT + 600, scheduled: [], pending: [], events: [], ended: false, paused: false,
     objectives: [], flags: {}, stats: { spawned: 0, removed: 0, maxTracks: 0 },
+    batteries: [], missiles: [], airspace: 100, coins: 0, splashes: 0, coinLog: [],
   }
   st.weather = initWeather(st)
   initAirfields(st)
   st.radars = makeRadars(st)
+  initBatteries(st)
   populate(st, Math.round(78 * cfg.traffic * (0.35 + 0.65 * 0.8)))
   return st
 }
@@ -74,6 +78,10 @@ export function dispatch(st: GameState, cmd: Command): string | null {
     case 'intel': assessIntel(st, cmd.id, cmd.verdict, cmd.trackId); return null
     case 'watch': { const t = st.tracks[cmd.trackId]; if (t) t.watch = cmd.on; return null }
     case 'spawn': spawnEvent(st, cmd.event); return null
+    case 'warn': return warn(st, cmd.trackId)
+    case 'samFire': return samFire(st, cmd.batteryId, cmd.trackId)
+    case 'samAuto': { const b = st.batteries.find((x) => x.id === cmd.batteryId); if (b) b.auto = cmd.on; return null }
+    case 'raid': spawnRaid(st, cmd.size); return null
     case 'closeAirfield': { const af = st.airfields[cmd.icao]; if (af) { af.open = cmd.open; af.closedReason = cmd.open ? '' : 'Closed by operations' } return null }
   }
 }
@@ -110,6 +118,7 @@ export function tick(st: GameState) {
   }
   stepAssets(st, dt)
   stepOps(st, dt)
+  stepCombat(st, dt)
   if (st.tick % 5 === 0) tickWeather(st, 5)
   // --- surveillance
   stepRadars(st, dt)
@@ -119,8 +128,9 @@ export function tick(st: GameState) {
   if (st.tick % 10 === 0) stepRadarHealth(st)
   // --- events and incidents
   directorStep(st)
+  if (st.flags.started) hostileDirector(st)
   monitorIncidents(st)
-  runScheduled(st, (fn, args) => { eventScheduled(st, fn, args); scenarioScheduled(st, fn) })
+  runScheduled(st, (fn, args) => { eventScheduled(st, fn, args); scenarioScheduled(st, fn); scheduledCombat(st, fn, args) })
   // --- bookkeeping
   if (st.tick % 5 === 0) {
     let live = 0

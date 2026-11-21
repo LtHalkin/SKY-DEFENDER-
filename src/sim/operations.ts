@@ -3,9 +3,10 @@ import { CIV_TYPES } from './data/aircraftTypes'
 import { AIRPORT_MAP } from './data/airports'
 import { destPoint, distNm, fmtHM } from './geo'
 import { say, rt } from './comms'
-import { canLaunch, launchAsset, nearestAirfield, sendHome, fuelPct } from './assets'
+import { bingoFuel, canLaunch, launchAsset, nearestAirfield, sendHome, fuelPct } from './assets'
 import { resolveFor } from './incidents'
 import { label } from './identification'
+import { fireMissile, onVisual } from './combat'
 import type { Aircraft, Asset, GameState, OpType, Operation } from './types'
 
 export const STAGES: Record<OpType, string[]> = {
@@ -17,13 +18,14 @@ export const STAGES: Record<OpType, string[]> = {
   REFUEL: ['TASKED', 'TANKER LAUNCH', 'RENDEZVOUS', 'CONTACT', 'TRANSFER', 'BREAKAWAY', 'RTB', 'COMPLETE'],
   FERRY: ['TASKED', 'LAUNCH', 'TRANSIT', 'LANDING', 'COMPLETE'],
   SUPPLY: ['TASKED', 'LOADING', 'LAUNCH', 'TRANSIT', 'UNLOAD', 'COMPLETE'],
+  ENGAGE: ['TASKED', 'LAUNCH', 'TRANSIT', 'INTERCEPT', 'ENGAGING', 'RTB', 'COMPLETE'],
 }
 export interface OpSpec {
   type: OpType; trackId?: string; assetId?: string; tankerId?: string; point?: { lat: number; lon: number }; radius?: number; durationMin?: number
   startDelayMin?: number; toBase?: string; cargo?: { kind: 'FUEL' | 'SPARES'; qty: number }; autoRelief?: boolean; expedite?: boolean
 }
 const ROLE_OK: Record<OpType, string[]> = {
-  IDENTIFY: ['FIGHTER'], SHADOW: ['FIGHTER'], MONITOR: ['AEW', 'ELINT', 'FIGHTER'], PATROL: ['FIGHTER', 'AEW', 'ELINT', 'HELO', 'TANKER'], RETURN: [], REFUEL: ['TANKER'], FERRY: ['FIGHTER', 'AEW', 'ELINT', 'TANKER', 'TRANSPORT', 'HELO'], SUPPLY: ['TRANSPORT', 'HELO'],
+  IDENTIFY: ['FIGHTER'], SHADOW: ['FIGHTER'], MONITOR: ['AEW', 'ELINT', 'FIGHTER'], PATROL: ['FIGHTER', 'AEW', 'ELINT', 'HELO', 'TANKER'], RETURN: [], REFUEL: ['TANKER'], FERRY: ['FIGHTER', 'AEW', 'ELINT', 'TANKER', 'TRANSPORT', 'HELO'], SUPPLY: ['TRANSPORT', 'HELO'], ENGAGE: ['FIGHTER'],
 }
 const log = (st: GameState, op: Operation, m: string) => { op.log.push(`${fmtHM(st.t)} ${m}`); op.updated = st.t }
 function setStage(st: GameState, op: Operation, s: number, m?: string) { op.stage = s; op.stageSince = st.t; log(st, op, m ?? STAGES[op.type][s]) }
@@ -33,9 +35,9 @@ const entity = (st: GameState, op: Operation): Aircraft | undefined => (op.entit
 function isNight(st: GameState) { const h = (st.t / 3600) % 24; return h < 5.5 || h > 20.5 }
 export function visRange(st: GameState) { const v = Math.min(st.weather.visibilityKm / 4, 2.2); return Math.max(0.5, v * (isNight(st) ? 0.6 : 1)) }
 
-function pickAsset(st: GameState, roles: string[], from: { lat: number; lon: number }, allowAirborne = true): Asset | null {
+function pickAsset(st: GameState, roles: string[], from: { lat: number; lon: number }, allowAirborne = true, only?: Asset[]): Asset | null {
   let best: Asset | null = null, bt = Infinity
-  for (const a of Object.values(st.assets)) {
+  for (const a of only ?? Object.values(st.assets)) {
     const t = ASSET_TYPES[a.typeId]; if (!roles.includes(t.role)) continue
     if (a.opId && st.ops[a.opId] && (st.ops[a.opId].status === 'ACTIVE' || st.ops[a.opId].status === 'PLANNED')) continue
     let eta: number
@@ -57,7 +59,7 @@ export function createOp(st: GameState, spec: OpSpec): { ok: true; id: string } 
   const tr = spec.trackId ? st.tracks[spec.trackId] : undefined
   const op: Operation = { id: `OP${String(Object.keys(st.ops).length + 1).padStart(3, '0')}`, type, status: 'ACTIVE', stages: STAGES[type], stage: 0, assets: [], created: st.t, updated: st.t, log: [], result: '', stageSince: st.t, data: {} }
   let asset: Asset | undefined
-  const needTrack = type === 'IDENTIFY' || type === 'SHADOW' || type === 'MONITOR'
+  const needTrack = type === 'IDENTIFY' || type === 'SHADOW' || type === 'MONITOR' || type === 'ENGAGE'
   if (needTrack) {
     if (!tr || tr.dropped) return { ok: false, error: 'Select a live track for this operation' }
     if (!st.aircraft[tr.entityId]) return { ok: false, error: 'Target no longer airborne' }
@@ -66,6 +68,15 @@ export function createOp(st: GameState, spec: OpSpec): { ok: true; id: string } 
   }
   if (spec.assetId) { asset = st.assets[spec.assetId]; if (!asset) return { ok: false, error: 'Unknown asset' } }
   const pos = tr ?? spec.point ?? { lat: 54.5, lon: -4 }
+  if (type === 'ENGAGE') {
+    if (!tr!.hostile) return { ok: false, error: 'Weapons tight — target has not been declared hostile (identify it, or warn it and see if it complies)' }
+    // prefer a jet already on this target with missiles
+    if (!asset) asset = Object.values(st.assets).find((a) => a.ac && a.missiles > 0 && a.opId && st.ops[a.opId]?.entityId === tr!.entityId) ?? undefined
+    if (asset?.opId && st.ops[asset.opId] && st.ops[asset.opId].entityId === tr!.entityId && st.ops[asset.opId].type !== 'ENGAGE') endOp(st, st.ops[asset.opId], 'COMPLETE', 'Handed over to ENGAGE', false)
+    if (!asset) { const cands = Object.values(st.assets).filter((a) => a.missiles > 0); asset = pickAsset(st, ['FIGHTER'], pos, true, cands) ?? undefined }
+    if (asset && asset.missiles <= 0) return { ok: false, error: `${asset.callsign} has no missiles left` }
+    if (asset && asset.status === 'RETURNING' && asset.ac && asset.fuelKg > bingoFuel(st, asset) * 1.3) asset.status = 'AIRBORNE'
+  }
   if (type === 'IDENTIFY' || type === 'SHADOW') { asset ??= pickAsset(st, ROLE_OK[type], pos) ?? undefined }
   else if (type === 'MONITOR') asset ??= pickAsset(st, ['AEW', 'ELINT'], pos) ?? pickAsset(st, ['FIGHTER'], pos) ?? undefined
   else if (type === 'PATROL') { if (!spec.point) return { ok: false, error: 'Patrol needs a map point' }; asset ??= pickAsset(st, ['FIGHTER'], pos) ?? undefined }
@@ -205,6 +216,8 @@ function visualId(st: GameState, op: Operation, a: Asset, ent: Aircraft) {
     case 'noPlan': text = `${tn} ${ent.callsign} ${ent.reg}, ${ent.operator}. Crew responding, confirm flight plan filed with area.`; break
     default: text = `${tn} ${ent.callsign} ${ent.reg}, ${ent.operator}. Crew responding normally.`
   }
+  if (t.intent === 'hostile') text = `${tn}, hostile markings, ignoring all calls. Weapons free on your authority.`
+  onVisual(st, ent, tr)
   if (tr) {
     tr.vid = { t: st.t, text, byAsset: a.callsign, ok: true }
     if (!tr.scored) { tr.scored = true; st.score.idCorrect++ }
@@ -227,6 +240,7 @@ export function stepOps(st: GameState, _dt: number) {
       case 'REFUEL': stepRefuel(st, op); break
       case 'FERRY': stepFerry(st, op); break
       case 'SUPPLY': stepSupply(st, op); break
+      case 'ENGAGE': stepEngage(st, op); break
     }
   }
 }
@@ -266,7 +280,7 @@ function stepChase(st: GameState, op: Operation) {
       if (op.stage === 3 && dTrue <= visRange(st)) {
         if (op.type === 'IDENTIFY') setStage(st, op, 4, 'Visual identification in progress')
         else {
-          visualId(st, op, asset, ent)
+          if (!tr?.vid) visualId(st, op, asset, ent)
           op.endsAt = st.t + (op.durationMin ?? 60) * 60
           for (const o of Object.values(st.ops)) if (o !== op && o.type === 'SHADOW' && o.status === 'ACTIVE' && o.entityId === op.entityId && o.stage === 4) endOp(st, o, 'COMPLETE', `Relieved by ${asset.callsign}`)
           setStage(st, op, 4, `${asset.callsign} established shadow at 3NM`)
@@ -280,7 +294,11 @@ function stepChase(st: GameState, op: Operation) {
       if (op.type === 'IDENTIFY') {
         asset.ac.nav = { mode: 'TRAIL', wps: [], wpi: 0, final: 'NONE', dest: null, targetEntity: ent.id, trailNm: 0.4 }
         asset.ac.tgtAlt = ent.alt + 100
-        if (st.t - op.stageSince >= 18) { visualId(st, op, asset, ent); setStage(st, op, 5, 'Identification reported') }
+        if (st.t - op.stageSince >= 18) {
+          visualId(st, op, asset, ent)
+          if (ent.truth.intent === 'hostile') { endOp(st, op, 'COMPLETE', 'Hostile identified — escorting', false); createOp(st, { type: 'SHADOW', trackId: op.trackId, assetId: asset.id, durationMin: 60 }); break }
+          setStage(st, op, 5, 'Identification reported')
+        }
       } else {
         asset.ac.nav = { mode: 'TRAIL', wps: [], wpi: 0, final: 'NONE', dest: null, targetEntity: ent.id, trailNm: 3 }
         asset.ac.tgtAlt = Math.max(1500, ent.alt + 500)
@@ -439,3 +457,33 @@ function stepRefuel(st: GameState, op: Operation) {
 export function opProgress(op: Operation) { return Math.min(1, op.stage / Math.max(1, op.stages.length - 1)) }
 export const CIVT = CIV_TYPES
 export { nearestAirfield }
+
+function stepEngage(st: GameState, op: Operation) {
+  const a = A(st, op); if (opAssetGone(st, op, a)) return; const asset = a!
+  const ent = entity(st, op)
+  const t = ASSET_TYPES[asset.typeId]
+  if (op.stage >= 5) { rtbWait(st, op, asset); return }
+  switch (op.stage) {
+    case 0: { const r = ensureLaunch(st, op, asset); if (r === 'airborne') setStage(st, op, 2); else if (r === 'wait') setStage(st, op, 1); break }
+    case 1: if (asset.ac) setStage(st, op, 2, `${asset.callsign} airborne, weapons free`); break
+    case 2: case 3: case 4: {
+      if (!asset.ac) break
+      if (!ent) { setStage(st, op, 5, (op.data.fired as number) ? 'Target destroyed — RTB' : 'Target gone — RTB'); sendHome(st, asset); break }
+      if (asset.status === 'RETURNING') { endOp(st, op, 'ABORTED', 'Bingo fuel', false); break }
+      const k = knownPos(st, op, asset, ent)
+      const d = distNm(asset.ac, ent)
+      asset.ac.tgtAlt = Math.max(1500, Math.min(t.ceiling, ent.alt))
+      intercept(asset, ent, k.pos, k.live, k.live ? d : distNm(asset.ac, k.pos))
+      if (asset.ac.nav.speedOverride && d > 3) asset.ac.nav.speedOverride = t.maxKt * 0.92
+      if (op.stage === 2 && k.live) setStage(st, op, 3, `${asset.callsign} radar lock`)
+      const inFlight = st.missiles.some((m) => m.tgt === ent.id && m.by === asset.callsign)
+      if (k.live && d <= t.mRange && !inFlight && st.t - ((op.data.lastShot as number) ?? -99) > 6) {
+        if (asset.missiles <= 0) { setStage(st, op, 5, 'Winchester — no missiles left, RTB'); sendHome(st, asset); break }
+        asset.missiles--; op.data.lastShot = st.t; op.data.fired = ((op.data.fired as number) ?? 0) + 1
+        if (op.stage !== 4) setStage(st, op, 4, 'Engaging')
+        fireMissile(st, asset.ac, asset.callsign, ent.id, t.pk, 'AAM')
+      }
+      break
+    }
+  }
+}

@@ -230,7 +230,7 @@ export function directorStep(st: GameState) {
   let ev = st.rng.weighted(EVENTS, (e) => e.w(tn))
   // civil-only events fail quietly if there is no suitable aircraft; retry a few
   for (let i = 0; i < 4; i++) { const r = ev.run(st); if (r !== null) break; ev = st.rng.weighted(EVENTS, (e) => e.w(tn)) }
-  const base = st.cfg.mode === 'INSTANT' || st.flags.quick ? 140 : 1500
+  const base = st.cfg.mode === 'INSTANT' ? 140 : st.flags.quick ? 420 : 1500
   st.nextEvent = st.t + (base / (st.cfg.complexity * 0.9 + 0.15) / (1 + tn * 2.6)) * st.rng.range(0.6, 1.4)
   void ev
 }

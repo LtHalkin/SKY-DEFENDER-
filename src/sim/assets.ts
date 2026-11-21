@@ -7,7 +7,8 @@ import { allocSquawk } from './traffic'
 import type { Aircraft, Airfield, Asset, GameState, Readiness } from './types'
 
 export const LAUNCH_DELAY: Record<Readiness, number> = { R5: 120, R30: 300, R60: 600 }
-const CALL: Record<string, string> = { F3: 'VIPER', E3D: 'MAGIC', R1: 'RIVET', VC10: 'TARTAN', L1011: 'SHELL', C130: 'ASCOT', CH47: 'CHALK' }
+const CALL: Record<string, string> = { F3: 'VIPER', E3D: 'MAGIC', R1: 'RIVET', VC10: 'TARTAN', L1011: 'SHELL', KC135: 'TEXACO', C130: 'ASCOT', CH47: 'CHALK', HAWK: 'TALON', F5E: 'WOLF', L159: 'COBRA', F16: 'FALCON', M2K: 'STORM', F15: 'EAGLE', EF: 'RAZOR' }
+export const upg = (st: GameState, k: string) => st.cfg.upgrades?.[k] ?? 0
 
 export function initAirfields(st: GameState) {
   let n = 0
@@ -15,7 +16,8 @@ export function initAirfields(st: GameState) {
     const ap = AIRPORT_MAP[b.icao]
     const fuelScale = st.cfg.mode === 'INSTANT' ? 0.85 : 1
     st.airfields[b.icao] = { icao: b.icao, name: ap.name, lat: ap.lat, lon: ap.lon, fuelKg: b.fuel * fuelScale, fuelCap: b.cap, spares: b.spares, sparesCap: b.spares * 3, bowsers: b.bowsers, bowsersBusy: 0, engineers: b.engineers, engineersBusy: 0, open: true, closedReason: '', hasRunwayLength: 8000, alert: null }
-    for (const [typeId, count, pre] of b.fleet) {
+    const fleet: [string, number, string][] = st.cfg.fleet ? [] : b.fleet
+    for (const [typeId, count, pre] of fleet) {
       const t = ASSET_TYPES[typeId]
       for (let i = 0; i < count; i++) {
         n++
@@ -24,11 +26,21 @@ export function initAirfields(st: GameState) {
         const asset: Asset = {
           id, tail, callsign: `${CALL[typeId]}${i + 1}${b.icao === 'EGQL' || b.icao === 'EGAA' ? 2 : 1}`, typeId, baseId: b.icao, locationId: b.icao, status: 'READY', readiness: typeId === 'F3' && i < 2 ? 'R5' : 'R60',
           fuelKg: t.fuelCap, serviceHrs: st.rng.range(0.3, 1) * t.svcHrs, flightHrs: 0, defect: null, busyUntil: 0, opId: null, ac: null, sorties: 0,
+          missiles: t.missiles ? t.missiles + upg(st, 'missiles') : 0, maxMissiles: t.missiles ? t.missiles + upg(st, 'missiles') : 0,
         }
         // a realistic fleet is never entirely serviceable
         if (st.cfg.mode !== 'BASIC' && st.rng.chance(0.12) && i > 0) { asset.status = 'MAINT'; asset.busyUntil = st.t + st.rng.range(1800, 9000); asset.defect = 'Scheduled servicing' }
         st.assets[id] = asset
       }
+    }
+  }
+  if (st.cfg.fleet) {
+    const perType: Record<string, number> = {}
+    for (const f of st.cfg.fleet) {
+      const t = ASSET_TYPES[f.typeId]; if (!t || !st.airfields[f.base]) continue
+      const k = (perType[f.typeId] = (perType[f.typeId] ?? 0) + 1)
+      const mm = t.missiles ? t.missiles + upg(st, 'missiles') : 0
+      st.assets[f.id] = { id: f.id, tail: `ZK${100 + n++}`, callsign: `${CALL[f.typeId] ?? 'BLUE'}${k}${(k * 7) % 10}`, typeId: f.typeId, baseId: f.base, locationId: f.base, status: 'READY', readiness: t.role === 'FIGHTER' ? 'R5' : 'R30', fuelKg: t.fuelCap, serviceHrs: t.svcHrs, flightHrs: 0, defect: null, busyUntil: 0, opId: null, ac: null, sorties: 0, missiles: mm, maxMissiles: mm }
     }
   }
   // make callsigns unique
@@ -61,7 +73,7 @@ export function canLaunch(st: GameState, a: Asset): string | null {
 export function launchAsset(st: GameState, a: Asset, opId: string | null, expedite = false): string | null {
   const err = canLaunch(st, a); if (err) return err
   a.status = 'LAUNCHING'; a.opId = opId
-  a.launchAt = st.t + (expedite ? 60 : LAUNCH_DELAY[a.readiness])
+  a.launchAt = st.t + (expedite ? 60 : LAUNCH_DELAY[a.readiness]) * Math.pow(0.75, upg(st, 'scramble'))
   const af = st.airfields[a.locationId!]
   say(st, { channel: 'AIRFIELD', from: af.name.toUpperCase().replace('RAF ', ''), to: 'OPS', text: `${rt(a.callsign)} — ${ASSET_TYPES[a.typeId].short} state ${a.readiness}, engines starting. Estimated airborne ${Math.round((a.launchAt - st.t) / 60)} minutes.`, voice: 'AIRFIELD', sev: 'ROUTINE', ref: a.id, refKind: 'asset' })
   return null
@@ -174,6 +186,7 @@ function processAirfield(st: GameState, af: Airfield) {
         const need = t.fuelCap - a.fuelKg
         const take = Math.min(need, af.fuelKg)
         af.fuelKg -= take; a.fuelKg += take
+        a.missiles = a.maxMissiles
         a.lowWarned = false; a.bingoWarned = false
         if (a.serviceHrs <= 0) { a.status = 'MAINT'; a.defect = 'Scheduled servicing'; a.busyUntil = 0; continue }
         if (a.fuelKg < t.fuelCap * 0.55 && af.fuelKg <= 1) { a.status = 'READY'; a.defect = 'Low fuel – airfield stocks exhausted'; say(st, { channel: 'AIRFIELD', from: af.name, to: 'OPS', text: `${a.callsign} turnaround complete but only ${Math.round((a.fuelKg / t.fuelCap) * 100)}% fuel — airfield stocks exhausted.`, voice: 'AIRFIELD', sev: 'PRIORITY', ref: a.id, refKind: 'asset' }); continue }
