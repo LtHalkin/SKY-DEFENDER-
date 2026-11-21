@@ -34,6 +34,7 @@ export const CIV_TYPES: Record<string, CivType> = Object.fromEntries([
   T('BALN', 'Free balloon', 'PISTON', 22, 400, 200, 0.05, 99999, 'NONE', 1), T('FLOK', 'Bird flock', 'PISTON', 28, 8, 300, 0.04, 99999, 'NONE', 8),
   T('ANOM', 'Anomalous propagation return', 'PISTON', 40, 25, 500, 0.5, 99999, 'NONE', 3),
   T('BFJ', 'Bandit fast jet', 'JET', 480, 450, 15000, 0.8, 1500, 'NONE', 4), T('BBM', 'Bandit bomber', 'JET', 420, 420, 3000, 2.2, 5000, 'NONE', 2.5), T('BDR', 'Bandit drone', 'TURBOPROP', 220, 250, 1500, 0.12, 2000, 'NONE', 3),
+  T('BLL', 'Bandit low-level strike jet', 'JET', 460, 300, 9000, 0.6, 1200, 'NONE', 4), T('BDC', 'Decoy drone', 'JET', 450, 350, 9000, 0.8, 800, 'NONE', 3), T('ALJ', 'Allied fighter (radio failure)', 'JET', 420, 450, 12000, 0.5, 1500, 'NONE', 4),
 ].map((t) => [t.id, t]))
 
 export const ROLE_SQUAWK: Partial<Record<Role, string>> = { GA: '7000' }
@@ -96,3 +97,17 @@ export const BASE_SEEDS: BaseSeed[] = [
   { icao: 'EGVO', fuel: 60000, cap: 140000, spares: 24, bowsers: 2, engineers: 2, fleet: [['CH47', 4, 'ZA']] },
   { icao: 'EGAA', fuel: 40000, cap: 90000, spares: 12, bowsers: 1, engineers: 1, fleet: [['CH47', 2, 'ZH']] },
 ]
+
+export interface GroundRadarType { id: string; name: string; short: string; range: number; antennaFt: number; sweepSec: number; blurb: string }
+export const GROUND_RADARS: Record<string, GroundRadarType> = {
+  GAPFILLER: { id: 'GAPFILLER', name: 'Low-level gap-filler radar', short: 'GAP-FILLER', range: 90, antennaFt: 2600, sweepSec: 5, blurb: 'Hill-top mast radar. Short range, but sees low-flying raiders that slip under the main network.' },
+  MOBILE: { id: 'MOBILE', name: 'Type 101 mobile radar', short: 'TYPE 101', range: 170, antennaFt: 600, sweepSec: 8, blurb: 'Transportable radar. Plug a gap in coverage anywhere you need it.' },
+  LONGRANGE: { id: 'LONGRANGE', name: 'Type 93 long-range radar', short: 'TYPE 93', range: 260, antennaFt: 900, sweepSec: 10, blurb: 'Full-size air defence radar head. Long reach out over the sea.' },
+}
+export const RADAR_SITES: Site[] = [
+  { id: 'UNST', name: 'Unst, Shetland', lat: 60.75, lon: -0.85 }, { id: 'STORNOWAY', name: 'Stornoway', lat: 58.21, lon: -6.39 }, { id: 'WICK', name: 'Wick', lat: 58.44, lon: -3.09 },
+  { id: 'BUCHANNESS', name: 'Buchan Ness', lat: 57.47, lon: -1.78 }, { id: 'FORTH', name: 'Firth of Forth', lat: 56.05, lon: -2.6 }, { id: 'ANTRIM', name: 'Antrim coast', lat: 55.15, lon: -6.25 },
+  { id: 'NORTHUMBERLAND', name: 'Northumberland coast', lat: 55.6, lon: -1.65 }, { id: 'FLAMBOROUGH', name: 'Flamborough Head', lat: 54.12, lon: -0.08 }, { id: 'NORFOLK', name: 'Norfolk coast', lat: 52.95, lon: 1.15 },
+  { id: 'KENT', name: 'Kent coast', lat: 51.25, lon: 1.38 }, { id: 'PEMBROKE', name: 'Pembrokeshire', lat: 51.75, lon: -5.1 }, { id: 'LANDSEND', name: "Land's End", lat: 50.07, lon: -5.7 },
+]
+export const RADAR_SITE_MAP: Record<string, Site> = Object.fromEntries(RADAR_SITES.map((s) => [s.id, s]))

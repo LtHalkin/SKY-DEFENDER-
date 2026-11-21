@@ -5,7 +5,7 @@ export type Category = 'UNKNOWN' | 'UNCORRELATED' | 'CORRELATED' | 'IDENTIFIED' 
 export type Role = 'AIRLINER' | 'REGIONAL' | 'CARGO' | 'GA' | 'BIZJET' | 'OFFSHORE' | 'POLICE' | 'AMBULANCE' | 'COASTGUARD' | 'MIL' | 'FOREIGN' | 'PHENOM'
 export type Intent =
   | 'normal' | 'commsFail' | 'emergency' | 'unlawful' | 'noPlan' | 'xpdrFault' | 'diverting' | 'cloned'
-  | 'strayed' | 'foreignState' | 'phenomenon' | 'friendly' | 'vfrLocal' | 'hostile'
+  | 'strayed' | 'foreignState' | 'phenomenon' | 'friendly' | 'vfrLocal' | 'hostile' | 'decoy'
 export interface Wp { name: string; lat: number; lon: number }
 
 export interface Truth { intent: Intent; legit: boolean; note: string; benign: boolean }
@@ -42,7 +42,7 @@ export interface Aircraft {
   emergency?: { kind: '7700' | '7600' | '7500'; since: number; divertTo?: string }
   deviateAt?: number
   hostile?: boolean; complied?: boolean; warnedAt?: number
-  raid?: { name: string; lat: number; lon: number; value: number; breached?: boolean }
+  raid?: { name: string; lat: number; lon: number; value: number; breached?: boolean; split?: { name: string; lat: number; lon: number; value: number }; vip?: boolean }
 }
 
 export interface FlightPlan {
@@ -80,7 +80,7 @@ export interface Track {
   intelLinks: string[]
   log: string[]
   watch: boolean
-  hostile?: boolean; noReply?: boolean; complied?: boolean
+  hostile?: boolean; noReply?: boolean; complied?: boolean; decoy?: boolean
 }
 
 export type RadarStatus = 'OPERATIONAL' | 'DEGRADED' | 'OFFLINE' | 'MAINTENANCE'
@@ -111,7 +111,7 @@ export interface Asset {
   launchAt?: number
   missiles: number; maxMissiles: number
   hold?: boolean
-  speedMode?: 'ECO' | 'CRUISE' | 'MAX'; fuelWarned?: boolean
+  speedMode?: 'AUTO' | 'ECO' | 'CRUISE' | 'MAX'; fuelWarned?: boolean
   bingoWarned?: boolean; lowWarned?: boolean
   ac: Aircraft | null
   sorties: number
@@ -196,6 +196,8 @@ export interface GameConfig {
   batteries?: { id: string; typeId: string; site: string }[]
   upgrades?: Record<string, number>
   hostiles?: boolean
+  extraRadars?: { id: string; typeId: string; site: string }[]
+  mission?: string
   level?: number
 }
 

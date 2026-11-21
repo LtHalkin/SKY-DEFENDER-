@@ -159,5 +159,5 @@ b.y,.y { color:#ffe34d; } b.o,.o { color:#ff9a2e; } b.p,.p { color:#c77dff; } b.
 button.mini { padding:0 .35rem; font-size:.62rem; margin-left:.4rem; }
 .sg-hint { color:#d6ffe3; font-size:.78rem; }
 
-.sg-speed { display:grid; grid-template-columns:repeat(3,1fr); gap:.3rem; margin-top:.3rem; } .sg-speed button { display:flex; flex-direction:column; gap:.15rem; padding:.45rem .2rem; font-size:.72rem; } .sg-speed button small { font-size:.6rem; color:#8fb8a0; } .sg-speed button.on { background:#1f6a3a; color:#fff; border-color:#39ff7a; } .sg-speed button.on small { color:#d6ffe3; }
+.sg-speed { display:grid; grid-template-columns:repeat(4,1fr); gap:.3rem; margin-top:.3rem; } .sg-speed button { display:flex; flex-direction:column; gap:.15rem; padding:.45rem .2rem; font-size:.72rem; } .sg-speed button small { font-size:.6rem; color:#8fb8a0; } .sg-speed button.on { background:#1f6a3a; color:#fff; border-color:#39ff7a; } .sg-speed button.on small { color:#d6ffe3; }
 .settings button.on { background:#1f6a3a; color:#fff; }

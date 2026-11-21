@@ -15,7 +15,7 @@ export function initAirfields(st: GameState) {
   for (const b of BASE_SEEDS) {
     const ap = AIRPORT_MAP[b.icao]
     const fuelScale = st.cfg.mode === 'INSTANT' ? 0.85 : 1
-    st.airfields[b.icao] = { icao: b.icao, name: ap.name, lat: ap.lat, lon: ap.lon, fuelKg: b.fuel * fuelScale, fuelCap: b.cap, spares: b.spares, sparesCap: b.spares * 3, bowsers: b.bowsers, bowsersBusy: 0, engineers: b.engineers, engineersBusy: 0, open: true, closedReason: '', hasRunwayLength: 8000, alert: null }
+    st.airfields[b.icao] = { icao: b.icao, name: ap.name, lat: ap.lat, lon: ap.lon, fuelKg: b.fuel * fuelScale, fuelCap: b.cap, spares: b.spares, sparesCap: b.spares * 3, bowsers: b.bowsers + upg(st, 'turnaround'), bowsersBusy: 0, engineers: b.engineers, engineersBusy: 0, open: true, closedReason: '', hasRunwayLength: 8000, alert: null }
     const fleet: [string, number, string][] = st.cfg.fleet ? [] : b.fleet
     for (const [typeId, count, pre] of fleet) {
       const t = ASSET_TYPES[typeId]
@@ -166,7 +166,7 @@ export function stepAssets(st: GameState, dt: number) {
 function startTurnaround(st: GameState, a: Asset, af: Airfield) {
   const t = ASSET_TYPES[a.typeId]
   const need = t.fuelCap - a.fuelKg
-  const dur = 1200 + need / 2000 * 60 + (t.role === 'TANKER' ? 900 : 0)
+  const dur = (1200 + need / 2000 * 60 + (t.role === 'TANKER' ? 900 : 0)) * Math.pow(0.7, upg(st, 'turnaround'))
   af.bowsersBusy++
   a.status = 'TURNAROUND'; a.busyUntil = st.t + dur
 }
@@ -226,14 +226,14 @@ export function recoverAsset(st: GameState, a: Asset, icao: string) {
 export const headingTo = bearingDeg
 
 /** Fighter speed setting: ECO saves fuel, CRUISE is the type's normal speed, MAX burns fuel fast. */
-export function modeSpeed(a: Asset) {
-  const t = ASSET_TYPES[a.typeId], m = a.speedMode ?? 'CRUISE'
+export function modeSpeed(a: Asset, intercepting = false) {
+  const t = ASSET_TYPES[a.typeId], m0 = a.speedMode ?? 'AUTO', m = m0 === 'AUTO' ? (intercepting ? 'MAX' : 'CRUISE') : m0
   return m === 'MAX' ? Math.round(t.maxKt * 0.95) : m === 'ECO' ? Math.round(t.cruiseKt * 0.78) : t.cruiseKt
 }
 export function applySpeedModes(st: GameState) {
   for (const a of Object.values(st.assets)) {
     if (!a.ac || ASSET_TYPES[a.typeId].role !== 'FIGHTER') continue
-    const nav = a.ac.nav, t = ASSET_TYPES[a.typeId], v = modeSpeed(a)
+    const nav = a.ac.nav, t = ASSET_TYPES[a.typeId], v = modeSpeed(a, nav.mode === 'INTERCEPT')
     if (nav.mode === 'TRAIL') continue
     if (nav.mode === 'INTERCEPT' && nav.targetEntity && st.aircraft[nav.targetEntity] && distNm(a.ac, st.aircraft[nav.targetEntity]) < 4) continue // matching speed for the join
     nav.speedOverride = nav.mode === 'ORBIT' || nav.mode === 'HOLD' ? Math.min(v, Math.round(t.cruiseKt * 0.8)) : v

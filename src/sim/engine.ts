@@ -14,6 +14,7 @@ import { assessIntel, directorStep, dispatchEngineers, eventScheduled, monitorIn
 import { newLedger } from './scoring'
 import { say, rt } from './comms'
 import { evaluateObjectives, scenarioScheduled, setupScenario } from './scenarios'
+import { missionStep, setupMission } from './campaign'
 import { hostileDirector, initBatteries, samFire, scheduledCombat, spawnRaid, stepCombat, warn } from './combat'
 
 export type Command =
@@ -27,7 +28,7 @@ export type Command =
   | { c: 'watch'; trackId: string; on: boolean }
   | { c: 'spawn'; event: string }
   | { c: 'closeAirfield'; icao: string; open: boolean }
-  | { c: 'warn'; trackId: string } | { c: 'samFire'; batteryId: string; trackId: string } | { c: 'samAuto'; batteryId: string; on: boolean } | { c: 'raid'; size: number } | { c: 'speedMode'; assetId: string; mode: 'ECO' | 'CRUISE' | 'MAX' }
+  | { c: 'warn'; trackId: string } | { c: 'samFire'; batteryId: string; trackId: string } | { c: 'samAuto'; batteryId: string; on: boolean } | { c: 'raid'; size: number } | { c: 'speedMode'; assetId: string; mode: 'AUTO' | 'ECO' | 'CRUISE' | 'MAX' }
 
 export const defaultConfig = (over: Partial<GameConfig> = {}): GameConfig => ({
   mode: 'COMBAT', seed: 1998, startHour: 6, traffic: 1, weather: 'CLEAR', complexity: 0.6, radarOff: [], incidents: true, tension0: 0.03, prepSeconds: 0, maxAssetsDown: 0, growth: true,
@@ -62,7 +63,8 @@ export class SimEngine {
     this.st.score = newLedger(); this.st.incidents = []; this.st.pending = []
     // scenario scripting starts once the picture has formed, so opening incidents are not wiped
     setupScenario(this.st)
-    if (this.st.cfg.hostiles) startTankers(this.st) }
+    setupMission(this.st)
+    if (this.st.cfg.hostiles || this.st.cfg.mission) { startTankers(this.st); startCap(this.st) } }
 }
 
 export function dispatch(st: GameState, cmd: Command): string | null {
@@ -123,6 +125,7 @@ export function tick(st: GameState) {
   stepOps(st, dt)
   applySpeedModes(st)
   stepCombat(st, dt)
+  if (st.cfg.mission && st.flags.started) missionStep(st)
   if (st.tick % 5 === 0) tickWeather(st, 5)
   // --- surveillance
   stepRadars(st, dt)
@@ -163,5 +166,19 @@ export function startTankers(st: GameState) {
     ac.lat = p.lat + 0.1; ac.lon = p.lon; ac.alt = t.patrolAlt; ac.tgtAlt = t.patrolAlt; ac.gs = t.cruiseKt * 0.8; ac.phase = 'ENROUTE'
     createOp(st, { type: 'PATROL', assetId: a.id, point: p, radius: 15, durationMin: 9999 })
   }
+  st.events = st.events.filter((e) => e.type !== 'msg')
+}
+
+/** CAP AT START upgrade: the best fighters begin the shift already on patrol. */
+export const CAP_POINTS = [{ lat: 56.4, lon: -0.5 }, { lat: 54.2, lon: 0.6 }, { lat: 57.8, lon: -6.5 }]
+export function startCap(st: GameState) {
+  const n = st.cfg.upgrades?.capStart ?? 0; if (!n) return
+  const ftrs = Object.values(st.assets).filter((a) => ASSET_TYPES[a.typeId].role === 'FIGHTER' && a.status === 'READY').sort((a, b) => ASSET_TYPES[b.typeId].maxKt * (b.maxMissiles + 1) - ASSET_TYPES[a.typeId].maxKt * (a.maxMissiles + 1))
+  ftrs.slice(0, n).forEach((a, i) => {
+    const t = ASSET_TYPES[a.typeId], p = CAP_POINTS[i % CAP_POINTS.length]
+    const ac = spawnAssetAircraft(st, a)
+    ac.lat = p.lat; ac.lon = p.lon; ac.alt = t.patrolAlt; ac.tgtAlt = t.patrolAlt; ac.gs = t.cruiseKt * 0.8; ac.phase = 'ENROUTE'
+    createOp(st, { type: 'PATROL', assetId: a.id, point: p, radius: 20, durationMin: 60 })
+  })
   st.events = st.events.filter((e) => e.type !== 'msg')
 }

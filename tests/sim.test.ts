@@ -291,3 +291,39 @@ describe('tankers, speed modes, fuel warnings', () => {
     expect(warned).toBe(true)
   })
 })
+
+describe('campaign', () => {
+  const strong = [{ id: 'A', typeId: 'F15', base: 'EGXE' }, { id: 'B', typeId: 'F15', base: 'EGQL' }, { id: 'C', typeId: 'EF', base: 'EGXC' }, { id: 'D', typeId: 'EF', base: 'EGQS' }, { id: 'E', typeId: 'F16', base: 'EGUN' }, { id: 'T', typeId: 'VC10', base: 'EGVN' }, { id: 'W', typeId: 'E3D', base: 'EGXW' }]
+  const bats = ['LONDON', 'MANCHESTER', 'EDINBURGH', 'NEWCASTLE', 'ABERDEEN', 'BELFAST', 'LEEMING', 'CONINGSBY'].map((s, i) => ({ id: 'S' + i, typeId: 'BLOODHOUND', site: s }))
+  const play = async (id: string, bot: boolean) => {
+    const { MISSION_MAP } = await import('../src/sim/campaign'); const m = MISSION_MAP[id]
+    const e = new SimEngine(defaultConfig({ mode: 'SANDBOX', scenarioId: 'QUICK', mission: id, seed: m.seed, startHour: m.hour, weather: m.weather, traffic: 0.6, complexity: 0.4, incidents: true, hostiles: false, growth: false, level: 10, radarOff: m.radarOff ?? [], fleet: strong, batteries: bot ? bats : [], upgrades: bot ? { radar: 3, scramble: 3, missiles: 3 } : {} }))
+    e.warm(150); e.st.flags.quick = true
+    if (bot) for (const b of e.st.batteries) b.auto = true
+    for (let i = 0; i < 3200 && !e.st.ended; i++) {
+      e.step(1)
+      if (!bot || i % 10) continue
+      for (const t of Object.values(e.st.tracks)) {
+        if (t.dropped) continue
+        const ac = e.st.aircraft[t.entityId]; if (!ac || ac.kind === 'asset') continue
+        const busy = Object.values(e.st.ops).some((o) => o.entityId === ac.id && o.status === 'ACTIVE')
+        if (ac.kind === 'foreign' && !t.decoy && !t.complied) {
+          if (t.hostile && !Object.values(e.st.ops).some((o) => o.entityId === ac.id && o.type === 'ENGAGE' && o.status === 'ACTIVE')) e.dispatch({ c: 'op', spec: { type: 'ENGAGE', trackId: t.id } })
+          else if (!busy) e.dispatch({ c: 'op', spec: { type: 'IDENTIFY', trackId: t.id, expedite: true } })
+        } else if (ac.kind === 'civil' && (t.category === 'UNKNOWN' || t.category === 'UNCORRELATED') && !t.manual) {
+          if (!t.checks.atc) e.dispatch({ c: 'atc', trackId: t.id }); else e.dispatch({ c: 'declare', trackId: t.id, cat: ac.truth.legit ? 'IDENTIFIED' : 'SUSPICIOUS' })
+        }
+        if (id === 'M8' && ac.id === e.st.flags.vipId && !busy) e.dispatch({ c: 'op', spec: { type: 'SHADOW', trackId: t.id, assetId: 'E', expedite: true } })
+      }
+      for (const inc of e.st.incidents) if (inc.closed === null) { e.dispatch({ c: 'ack', incidentId: inc.id }); if (inc.kind === 'EMERGENCY_7700') e.dispatch({ c: 'alertAirfield', incidentId: inc.id }) }
+    }
+    return e.st
+  }
+  it('every mission runs to an end state without a player', async () => {
+    const { MISSIONS } = await import('../src/sim/campaign')
+    for (const m of MISSIONS) { const st = await play(m.id, false); expect(st.ended).toBe(true); expect(st.objectives.length).toBe(m.objectives.length) }
+  }, 60000)
+  it('a capable player can win the opening missions', async () => {
+    for (const id of ['M1', 'M2', 'M4']) { const st = await play(id, true); expect([id, st.flags.result, st.objectives.map((o) => o.done)]).toEqual([id, 'COMPLETE', st.objectives.map(() => true)]) }
+  }, 60000)
+})

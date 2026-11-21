@@ -222,6 +222,7 @@ function visualId(st: GameState, op: Operation, a: Asset, ent: Aircraft) {
     default: text = `${tn} ${ent.callsign} ${ent.reg}, ${ent.operator}. Crew responding normally.`
   }
   if (t.intent === 'hostile') text = `${tn}, hostile markings, ignoring all calls. Weapons free on your authority.`
+  if (t.intent === 'decoy') text = ent.typeId === 'BDC' ? 'Unmanned decoy drone carrying radar reflectors — not a threat. Weapons stay tight.' : `${tn} with allied markings, radio failure, rocking wings. Escorting it to land.`
   onVisual(st, ent, tr)
   if (tr) {
     tr.vid = { t: st.t, text, byAsset: a.callsign, ok: true }
@@ -299,7 +300,7 @@ function stepChase(st: GameState, op: Operation) {
       if (op.type === 'IDENTIFY') {
         asset.ac.nav = { mode: 'TRAIL', wps: [], wpi: 0, final: 'NONE', dest: null, targetEntity: ent.id, trailNm: 0.4 }
         asset.ac.tgtAlt = ent.alt + 100
-        if (st.t - op.stageSince >= 18) {
+        if (st.t - op.stageSince >= (isNight(st) ? 32 : 18)) {
           visualId(st, op, asset, ent)
           if (ent.truth.intent === 'hostile') { endOp(st, op, 'COMPLETE', 'Hostile identified — escorting', false); createOp(st, { type: 'SHADOW', trackId: op.trackId, assetId: asset.id, durationMin: 60 }); break }
           setStage(st, op, 5, 'Identification reported')
@@ -478,7 +479,11 @@ function stepEngage(st: GameState, op: Operation) {
     case 1: if (asset.ac) setStage(st, op, 2, `${asset.callsign} airborne, weapons free`); break
     case 2: case 3: case 4: {
       if (!asset.ac) break
-      if (!ent) { setStage(st, op, 5, (op.data.fired as number) ? 'Target destroyed — RTB' : 'Target gone — RTB'); sendHome(st, asset); break }
+      if (!ent) {
+        // still armed and fuelled: stay up on combat air patrol for the next raider instead of going home
+        if (asset.missiles > 0 && asset.fuelKg > t.fuelCap * 0.45) { const p = { lat: asset.ac.lat, lon: asset.ac.lon }; endOp(st, op, 'COMPLETE', (op.data.fired as number) ? 'Splash — holding on CAP' : 'Target gone — holding on CAP', false); createOp(st, { type: 'PATROL', assetId: asset.id, point: p, radius: 15, durationMin: 30 }); break }
+        setStage(st, op, 5, (op.data.fired as number) ? 'Target destroyed — RTB' : 'Target gone — RTB'); sendHome(st, asset); break
+      }
       if (asset.status === 'RETURNING') { endOp(st, op, 'ABORTED', 'Bingo fuel', false); break }
       const k = knownPos(st, op, asset, ent)
       const d = distNm(asset.ac, ent)

@@ -1,5 +1,5 @@
 import { RADAR_DEFS } from './data/radars'
-import { ASSET_TYPES } from './data/aircraftTypes'
+import { ASSET_TYPES, GROUND_RADARS, RADAR_SITE_MAP } from './data/aircraftTypes'
 import { bearingDeg, distNm, norm360 } from './geo'
 import { wxAttenuation } from './weather'
 import type { Aircraft, GameState, Plot, Radar, Track } from './types'
@@ -9,6 +9,10 @@ export function makeRadars(st: GameState): Radar[] {
     ...d, status: st.cfg.radarOff.includes(d.id) ? 'OFFLINE' : 'OPERATIONAL', condition: st.rng.range(86, 100), interference: 0, angle: d.phase,
     hits: 0, lastHit: 0, repairUntil: 0, repairTeam: false, forcedOffline: st.cfg.radarOff.includes(d.id), note: st.cfg.radarOff.includes(d.id) ? 'Offline at start of watch' : 'Nominal',
   }))
+  for (const x of st.cfg.extraRadars ?? []) {
+    const t = GROUND_RADARS[x.typeId], site = RADAR_SITE_MAP[x.site]; if (!t || !site) continue
+    out.push({ id: x.id, name: `${t.short} ${site.name}`, lat: site.lat, lon: site.lon, antennaFt: t.antennaFt, primaryRange: t.range, secondaryRange: t.range, sweepSec: t.sweepSec, phase: st.rng.range(0, 360), wxSens: 0.5, status: 'OPERATIONAL', condition: 98, interference: 0, angle: 0, hits: 0, lastHit: 0, repairUntil: 0, repairTeam: false, note: 'Player-owned' })
+  }
   const boost = 1 + 0.1 * (st.cfg.upgrades?.radar ?? 0)
   for (const r of out) { r.primaryRange = Math.round(r.primaryRange * boost); r.secondaryRange = Math.round(r.secondaryRange * boost) }
   // airborne platforms: positions follow the assets
