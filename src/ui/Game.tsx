@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import geo from '../sim/data/geography.json'
 import { AIRPORTS } from '../sim/data/airports'
 import { ZONES } from '../sim/data/fixes'
-import { ASSET_TYPES } from '../sim/data/aircraftTypes'
+import { ASSET_TYPES, GROUND_RADARS } from '../sim/data/aircraftTypes'
 import { distNm, rad } from '../sim/geo'
 import { label, planFor } from '../sim/identification'
 import { opLabel } from '../sim/operations'
@@ -31,6 +31,27 @@ function plane(ctx: CanvasRenderingContext2D, x: number, y: number, hdg: number,
 const liveTracks = (st: GameState) => Object.values(st.tracks).filter((t) => !t.dropped && st.aircraft[t.entityId]?.kind !== 'asset')
 const samsInRange = (st: GameState, ent: Aircraft) => st.batteries.filter((b) => distNm(b, ent) <= b.range)
 
+// ---- label placement: icons reserve space, labels try 4 spots and skip if they would collide ----
+type Rect = { x: number; y: number; w: number; h: number }
+const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+class Labels {
+  rects: Rect[] = []
+  constructor(public ctx: CanvasRenderingContext2D, public fs: number) {}
+  block(x: number, y: number, r: number) { this.rects.push({ x: x - r, y: y - r, w: r * 2, h: r * 2 }) }
+  place(lines: string[], ax: number, ay: number, color: string, force = false, gap = 11): boolean {
+    const c = this.ctx, lh = this.fs * 1.12
+    const w = Math.max(...lines.map((l) => c.measureText(l).width)) + 4, h = lines.length * lh + 2
+    const cands: Rect[] = [{ x: ax + gap, y: ay - gap - h + lh * 0.6, w, h }, { x: ax + gap, y: ay + gap * 0.4, w, h }, { x: ax - gap - w, y: ay - gap - h + lh * 0.6, w, h }, { x: ax - gap - w, y: ay + gap * 0.4, w, h }]
+    let r = cands.find((q) => !this.rects.some((o) => overlaps(q, o)))
+    if (!r) { if (!force) return false; r = cands[0] }
+    this.rects.push(r)
+    c.lineJoin = 'round'; c.lineWidth = Math.max(3, this.fs * 0.28); c.strokeStyle = 'rgba(4,7,10,0.92)'; c.fillStyle = color
+    lines.forEach((l, i) => { const y = r!.y + (i + 1) * lh - lh * 0.22; c.strokeText(l, r!.x + 2, y); c.fillText(l, r!.x + 2, y) })
+    return true
+  }
+}
+let staticRects: Rect[] = []
+let staticShift = { x: 0, y: 0 }
 // ---- static map cache (land, coast, danger areas, airports): rebuilt only on zoom/resize/base changes ----
 const cache = { cv: null as HTMLCanvasElement | null, lat: 0, lon: 0, range: 0, w: 0, h: 0, dpr: 0, sig: '' }
 let lastView = '', lastViewChange = 0
@@ -49,13 +70,16 @@ function drawStatic(ctx: CanvasRenderingContext2D, s: GameState, w: number, h: n
   ctx.strokeStyle = night ? '#a8621f' : '#ff9a2e'; ctx.lineWidth = 1.5; ctx.beginPath()
   for (const line of COAST) line.forEach((p, i) => (i ? ctx.lineTo(P.x(p[0]), P.y(p[1])) : ctx.moveTo(P.x(p[0]), P.y(p[1]))))
   ctx.stroke()
-  for (const z of ZONES) { const x = P.x(z.lon), y = P.y(z.lat), r = z.r * P.pxPerNm(z.lat); ctx.fillStyle = 'rgba(170,20,20,0.28)'; ctx.strokeStyle = '#c33'; ctx.lineWidth = 1; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.strokeRect(x - r, y - r, r * 2, r * 2) }
+  ctx.setLineDash([4, 5]); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(220,60,60,0.45)'
+  for (const z of ZONES) { const x = P.x(z.lon), y = P.y(z.lat), r = z.r * P.pxPerNm(z.lat); ctx.strokeRect(x - r, y - r, r * 2, r * 2) }
+  ctx.setLineDash([])
+  const L = new Labels(ctx, 12 * k), range = store.view.rangeNm
+  const marks: { pri: number; x: number; y: number; text: string; color: string; draw: () => void }[] = []
   for (const r of s.radars) {
     if (r.note !== 'Player-owned') continue
     const x = P.x(r.lon), y = P.y(r.lat)
-    ctx.strokeStyle = '#4db8ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y + 3 * k, 6 * k, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke()
-    ctx.beginPath(); ctx.moveTo(x, y + 3 * k); ctx.lineTo(x, y + 10 * k); ctx.stroke()
-    ctx.fillStyle = '#9fd4ff'; ctx.fillText(r.name.split(' ')[0], x + 9 * k, y + 8 * k)
+    const short = Object.values(GROUND_RADARS).find((g) => r.name.startsWith(g.short))?.short ?? 'RADAR'
+    marks.push({ pri: 3, x, y, text: range < 260 ? short : '', color: '#9fd4ff', draw: () => { ctx.strokeStyle = '#4db8ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y + 3 * k, 6 * k, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, y + 3 * k); ctx.lineTo(x, y + 10 * k); ctx.stroke() } })
   }
   const seen = new Set<string>()
   for (const a of AIRPORTS) {
@@ -64,11 +88,14 @@ function drawStatic(ctx: CanvasRenderingContext2D, s: GameState, w: number, h: n
     if (a.kind !== 'MIL' && (a.size < 3 || seen.has(a.city))) continue
     if (a.kind === 'MIL' && !own) continue
     if (a.kind !== 'MIL') seen.add(a.city)
-    const x = P.x(a.lon), y = P.y(a.lat)
-    ctx.strokeStyle = a.kind === 'MIL' ? '#39ff7a' : '#4db8ff'; ctx.lineWidth = 2; ctx.beginPath()
-    if (a.kind === 'MIL') ctx.rect(x - 6 * k, y - 6 * k, 12 * k, 12 * k); else ctx.arc(x, y, 6 * k, 0, 7)
-    ctx.stroke(); ctx.fillStyle = a.kind === 'MIL' ? '#8dffb0' : '#cfe3ff'; ctx.fillText((a.kind === 'MIL' ? a.name.replace('RAF ', '') + ' AB' : a.city).toUpperCase(), x + 10 * k, y + 4)
+    const x = P.x(a.lon), y = P.y(a.lat), mil = a.kind === 'MIL'
+    const big = a.size >= 5
+    marks.push({ pri: mil ? 1 : big ? 2 : 4, x, y, text: mil ? a.name.replace('RAF ', '').replace('Belfast ', '').toUpperCase() : (big || range < 330 ? a.city.toUpperCase() : ''), color: mil ? '#8dffb0' : '#cfe3ff',
+      draw: () => { ctx.strokeStyle = mil ? '#39ff7a' : '#4db8ff'; ctx.lineWidth = 2; ctx.beginPath(); if (mil) ctx.rect(x - 5 * k, y - 5 * k, 10 * k, 10 * k); else ctx.arc(x, y, 5 * k, 0, 7); ctx.stroke() } })
   }
+  for (const m of marks) { m.draw(); L.block(m.x, m.y, 7 * k) }
+  for (const m of marks.sort((p, q) => p.pri - q.pri)) if (m.text) L.place([m.text], m.x, m.y, m.color, false, 8 * k)
+  staticRects = L.rects
 }
 function paintStatic(ctx: CanvasRenderingContext2D, s: GameState, w: number, h: number, dpr: number) {
   const v = store.view, now = performance.now()
@@ -90,6 +117,7 @@ function paintStatic(ctx: CanvasRenderingContext2D, s: GameState, w: number, h: 
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   const dx = Math.round((P.x(cache.lon) - w / 2 - MARGIN) * dpr), dy = Math.round((P.y(cache.lat) - h / 2 - MARGIN) * dpr)
   ctx.drawImage(cache.cv!, dx, dy)
+  staticShift = { x: dx / dpr, y: dy / dpr }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 }
 
@@ -98,6 +126,10 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number) 
   paintStatic(ctx, s, w, h, dpr)
   const P = makeProj(w, h); const k = Math.max(1, h / 950)
   ctx.font = `${12 * k}px "Lucida Console",monospace`
+  const L = new Labels(ctx, 12 * k)
+  L.rects = staticRects.map((r) => ({ ...r, x: r.x + staticShift.x, y: r.y + staticShift.y }))
+  const LQ: { pri: number; lines: string[]; x: number; y: number; color: string; force: boolean }[] = []
+  const zoomed = store.view.rangeNm < 250
   // radar sweeps (operational ground stations)
   if (store.save.settings.sweep) for (const r of s.radars) {
     if (r.airborne || r.status === 'OFFLINE' || r.status === 'MAINTENANCE') continue
@@ -121,7 +153,8 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number) 
       ctx.beginPath(); ctx.arc(x, y, R, 0, 7); ctx.stroke(); ctx.setLineDash([])
     }
     ctx.fillStyle = ammo > 0 ? (auto ? '#ff6b6b' : '#4db8ff') : '#777'; ctx.beginPath(); ctx.moveTo(x, y - 7 * k); ctx.lineTo(x + 6 * k, y + 5 * k); ctx.lineTo(x - 6 * k, y + 5 * k); ctx.closePath(); ctx.fill()
-    if (sel || threat || store.view.rangeNm < 220) ctx.fillText(`SAM${group.length > 1 ? '×' + group.length : ''} ${ammo}/${max}`, x + 9 * k, y + 14 * k)
+    L.block(x, y, 7 * k)
+    if (sel || threat || store.view.rangeNm < 140) LQ.push({ pri: sel ? 0 : threat ? 3 : 8, lines: [`SAM${group.length > 1 ? '×' + group.length : ''} ${ammo}/${max}`], x, y, color: '#8fcfff', force: sel })
     hits.push({ id: '', battery: (group.find((b) => b.id === store.sel.battery) ?? b0).id, x, y })
   }
   // patrols
@@ -136,7 +169,15 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number) 
     if ((isEm(t) || t.hostile) && flash) { ctx.strokeStyle = c; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(x, y, 16 * k, 0, 7); ctx.stroke() }
     plane(ctx, x, y, t.hdg, 9 * k, c)
     if (store.sel.track === t.id) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(x - 15 * k, y - 15 * k, 30 * k, 30 * k) }
-    if (pri(t) < 5 || store.sel.track === t.id || store.view.rangeNm < 250) { ctx.fillStyle = c; ctx.fillText(t.hostile ? 'BANDIT' : label(s, t), x + 14 * k, y - 8 * k); if (store.view.rangeNm < 250 || store.sel.track === t.id) ctx.fillText(`${t.alt === null ? '---' : Math.round(t.alt / 100)} ${Math.round(t.gs)}`, x + 14 * k, y + 6 * k) }
+    L.block(x, y, 9 * k)
+    const isSel = store.sel.track === t.id, p = pri(t)
+    const rng = store.view.rangeNm
+    if (p < 5 || isSel || rng < 160 || isVip(t)) {
+      const name = t.hostile ? 'BANDIT' : t.decoy ? (e?.typeId === 'ALJ' ? 'ALLIED' : 'DECOY') : label(s, t)
+      const detail = isSel || rng < 90 || (p < 5 && zoomed)
+      const lines = detail ? [name, `${t.alt === null ? '---' : 'FL' + Math.round(t.alt / 100)} ${Math.round(t.gs)}KT`] : [name]
+      LQ.push({ pri: isSel ? 0 : t.hostile ? 1 : isEm(t) ? 2 : isVip(t) ? 2 : p === 2 ? 5 : p === 3 ? 6 : 9, lines, x, y, color: c, force: isSel || t.hostile || isEm(t) || isVip(t) })
+    }
     hits.push({ id: t.id, x, y })
   }
   // own aircraft (data link)
@@ -149,11 +190,13 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number) 
     const tg = op?.entityId ? s.aircraft[op.entityId] : undefined
     if (tg) { ctx.strokeStyle = 'rgba(57,255,122,0.55)'; ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(P.x(tg.lon), P.y(tg.lat)); ctx.stroke(); ctx.setLineDash([]) }
     const t = ASSET_TYPES[a.typeId]
-    ctx.fillStyle = a.lowWarned && flash ? '#ffb000' : '#39ff7a'
-    ctx.fillText(a.callsign, x + 14 * k, y - 8 * k)
-    ctx.fillText(`F${Math.round((a.fuelKg / t.fuelCap) * 100)}%${t.missiles ? ' M' + a.missiles : ''}`, x + 14 * k, y + 6 * k)
+    L.block(x, y, 10 * k)
+    const asel = store.sel.asset === a.id, fighter = t.role === 'FIGHTER'
+    LQ.push({ pri: asel ? 0 : a.lowWarned ? 3 : fighter ? 4 : 7, lines: fighter || asel || zoomed ? [a.callsign, `F${Math.round((a.fuelKg / t.fuelCap) * 100)}%${t.missiles ? ' M' + a.missiles : ''}`] : [a.callsign], x, y, color: a.lowWarned && flash ? '#ffb000' : '#39ff7a', force: asel || (fighter && !!a.opId) })
     hits.push({ id: '', asset: a.id, x, y })
   }
+  // labels: most important first, lesser ones only where they fit
+  for (const q of LQ.sort((a, b) => a.pri - b.pri)) L.place(q.lines, q.x, q.y, q.color, q.force, 12 * k)
   // missiles
   for (const m of s.missiles) {
     ctx.strokeStyle = 'rgba(255,240,120,0.8)'; ctx.lineWidth = 2; ctx.beginPath()

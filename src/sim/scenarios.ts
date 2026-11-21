@@ -193,7 +193,7 @@ export function setupScenario(st: GameState) {
   ]
   if (cfg.mode === 'COMBAT') st.objectives = [{ id: 'a', text: 'Maintain an accurate Recognised Air Picture', done: false, failed: false, optional: true }, { id: 'b', text: 'Keep every incident handled', done: false, failed: false, optional: true }]
   st.flags.started = true
-  say(st, { channel: 'OPS', from: 'WATCH SUPERVISOR', to: 'ALL', text: `Watch commencing ${fmtHM(st.t)}Z. Radar network ${st.radars.filter((r) => r.status === 'OPERATIONAL' && !r.airborne).length} of 8 stations operational.`, voice: 'OPS', speak: false })
+  say(st, { channel: 'OPS', from: 'WATCH SUPERVISOR', to: 'ALL', text: `Watch commencing ${fmtHM(st.t)}Z. Radar network ${st.radars.filter((r) => r.status === 'OPERATIONAL' && !r.airborne).length} of ${st.radars.filter((r) => !r.airborne).length} stations operational.`, voice: 'OPS', speak: false })
 }
 
 export function scenarioScheduled(st: GameState, fn: string) {
