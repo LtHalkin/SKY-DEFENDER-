@@ -330,7 +330,7 @@ function stepPatrol(st: GameState, op: Operation) {
     case 1: if (asset.ac) setStage(st, op, 2); break
     case 2: {
       if (!asset.ac) break
-      asset.ac.nav = { mode: 'GOTO', wps: [{ name: 'PATROL', ...op.point! }], wpi: 0, final: 'NONE', dest: null, speedOverride: t.cruiseKt }
+      asset.ac.nav = { mode: 'GOTO', wps: [{ name: 'PATROL', ...op.point! }], wpi: 0, final: 'NONE', dest: null, speedOverride: Math.round((t.cruiseKt + t.maxKt) / 2) }
       asset.ac.tgtAlt = t.patrolAlt
       if (distNm(asset.ac, op.point!) < 6) { setStage(st, op, 3, `${asset.callsign} on patrol station`); op.endsAt = st.t + (op.durationMin ?? 60) * 60 }
       break

@@ -163,3 +163,38 @@ describe('modes', () => {
     expect(inst.st.incidents.length).toBeGreaterThan(3)
   })
 })
+
+describe('training scenarios can be completed', () => {
+  const build = async (id: string) => {
+    const { SCENARIO_MAP } = await import('../src/sim/scenarios'); const s = SCENARIO_MAP[id]
+    const e = new SimEngine(defaultConfig({ mode: 'TRADE', scenarioId: id, seed: s.cfg.seed, traffic: s.cfg.traffic, weather: s.cfg.weather, startHour: s.cfg.hour, complexity: s.cfg.complexity, radarOff: s.cfg.radarOff ?? [], incidents: s.cfg.incidents ?? false, intel: s.cfg.intel ?? false, radarFaults: s.cfg.radarFaults ?? false, tension0: s.cfg.tension0 ?? 0.03, growth: false }))
+    e.warm(150); return e
+  }
+  it('T1 First Contact: query ATC then classify', async () => {
+    const e = await build('T1')
+    e.step(400)
+    const mine = () => Object.values(e.st.tracks).filter((t) => !t.dropped && !t.manual && ['strayed', 'noPlan'].includes(e.st.aircraft[t.entityId]?.truth.intent ?? ''))
+    for (let i = 0; i < 40 && !e.st.ended; i++) { for (const t of mine()) { if (!t.checks.atc) e.dispatch({ c: 'atc', trackId: t.id }) } e.step(30); for (const t of mine()) if (t.checks.atc) e.dispatch({ c: 'declare', trackId: t.id, cat: 'IDENTIFIED' }) }
+    expect(e.st.flags.result).toBe('SUCCESS'); expect(e.st.ended).toBe(true)
+  })
+  it('T6 Mayday: acknowledging and alerting resolves all three incidents', async () => {
+    const e = await build('T6')
+    for (let i = 0; i < 320 && !e.st.ended; i++) {
+      e.step(15)
+      for (const inc of e.st.incidents) if (inc.closed === null) { e.dispatch({ c: 'ack', incidentId: inc.id }); if (inc.kind === 'EMERGENCY_7700' || inc.kind === 'UNLAWFUL_7500') e.dispatch({ c: 'alertAirfield', incidentId: inc.id }) }
+    }
+    expect(e.st.objectives.filter((o) => !o.optional).every((o) => o.done)).toBe(true)
+  })
+  it('T2 foreign aircraft: E-3D patrol + IDENTIFY completes', async () => {
+    const e = await build('T2')
+    const e3 = Object.values(e.st.assets).find((a) => a.typeId === 'E3D' && a.status === 'READY')!
+    expect(e.dispatch({ c: 'op', spec: { type: 'PATROL', assetId: e3.id, point: { lat: 57.5, lon: -9.5 }, durationMin: 120, expedite: true } })).toBeNull()
+    let tried = false
+    for (let i = 0; i < 700 && !e.st.ended; i++) {
+      e.step(15)
+      const t = Object.values(e.st.tracks).find((x) => !x.dropped && e.st.aircraft[x.entityId]?.truth.intent === 'foreignState')
+      if (t && !tried) { tried = e.dispatch({ c: 'op', spec: { type: 'IDENTIFY', trackId: t.id, expedite: true } }) === null }
+    }
+    expect(e.st.objectives[0].done).toBe(true)
+  })
+})

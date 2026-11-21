@@ -43,8 +43,6 @@ export function createState(cfg: GameConfig): GameState {
   initAirfields(st)
   st.radars = makeRadars(st)
   populate(st, Math.round(78 * cfg.traffic * (0.35 + 0.65 * 0.8)))
-  setupScenario(st)
-  // let the initial picture build (a few sweeps) without advancing the clock
   return st
 }
 
@@ -56,7 +54,9 @@ export class SimEngine {
   /** Warm-up: run silently so radar tracks exist when the watch begins. */
   warm(seconds: number) { for (let i = 0; i < seconds; i++) tick(this.st); this.st.t = this.st.startT; this.st.tick = 0; this.st.events.length = 0; this.st.messages.length = 0
     for (const tr of Object.values(this.st.tracks)) { tr.created = this.st.t; tr.unknownSince = tr.unknownSince === null ? null : this.st.t }
-    this.st.score = newLedger(); this.st.incidents = []; this.st.pending = this.st.pending.filter(() => true) }
+    this.st.score = newLedger(); this.st.incidents = []; this.st.pending = []
+    // scenario scripting starts once the picture has formed, so opening incidents are not wiped
+    setupScenario(this.st) }
 }
 
 export function dispatch(st: GameState, cmd: Command): string | null {

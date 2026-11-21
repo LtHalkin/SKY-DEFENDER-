@@ -58,11 +58,12 @@ function spawnStrayed(st: GameState, opts?: SpawnOpts): Aircraft | null {
   pend(st, ac, 'STRAYED', ac.xpdr.on ? 'UNCORRELATED LIGHT AIRCRAFT INBOUND' : 'UNIDENTIFIED PRIMARY CONTACT INBOUND', 2, 'IDENTIFY: ATC QUERY / VISUAL ID', 1200, `New contact ${areaText(ac)}, ${ac.xpdr.on ? 'squawk ' + ac.xpdr.squawk + ', no flight plan' : 'primary only'}, heading ${Math.round(ac.hdg)}.`)
   return ac
 }
-function spawnForeign(st: GameState): Aircraft {
+function spawnForeign(st: GameState, opts?: SpawnOpts): Aircraft {
   const r = st.rng
-  const north = r.chance(0.6)
+  const north = opts?.start ? false : r.chance(0.6)
   const wps: Wp[] = north
     ? (() => { const x = r.range(-9, 2); return [{ name: 'S', lat: 66.4, lon: x }, { name: 'A', lat: 61.9, lon: x - 1 }, { name: 'B', lat: r.range(59.2, 60.4), lon: x - r.range(4, 7) }, { name: 'C', lat: 64.5, lon: x - 16 }] })()
+    : opts?.start ? [{ name: 'S', ...opts.start }, { name: 'A', lat: opts.start.lat - 0.6, lon: -16.5 }, { name: 'B', lat: opts.start.lat - 0.8, lon: -11.8 }, { name: 'C', lat: opts.start.lat + 3.5, lon: -19 }]
     : (() => { const y = r.range(54.5, 59.5); return [{ name: 'S', lat: y + 3, lon: -29.5 }, { name: 'A', lat: y + 1.5, lon: -18 }, { name: 'B', lat: y, lon: r.range(-12.8, -11) }, { name: 'C', lat: y + 5.5, lon: -22 }] })()
   const typeId = r.chance(0.7) ? 'FSTA' : 'FSTB'
   const ac = newSpecial(st, { typeId, kind: 'foreign', callsign: `${NA[r.int(0, 22)]}${NA[r.int(0, 22)]}${r.int(100, 999)}`, reg: `RF-${r.int(10000, 99999)}`, truth: { intent: 'foreignState', legit: false, benign: true, note: 'Non-cooperative foreign state aircraft in transit' }, wps, alt: r.pick([25000, 29000, 33000]), operator: 'Foreign state', icao24: 'UNKN' })
@@ -145,10 +146,10 @@ function spawnUnlawful(st: GameState): Aircraft | null {
   if (!c.length) return null
   const ac = st.rng.pick(c)
   ac.xpdr.squawk = '7500'; ac.emergency = { kind: '7500', since: st.t }; ac.truth = { intent: 'unlawful', legit: true, benign: false, note: 'Unlawful interference on board — aircraft diverted from plan' }
-  const ap = st.rng.pick(AIRPORTS.filter((a) => (a.country === 'GB' || a.country === 'IE') && a.kind === 'CIV' && a.size >= 3 && distNm(a, ac) > 60))
-  const off = destPoint(ac, (ac.hdg + st.rng.pick([-70, 70])) % 360, 60)
+  const ap = st.rng.pick(AIRPORTS.filter((a) => (a.country === 'GB' || a.country === 'IE') && a.kind === 'CIV' && a.size >= 3 && distNm(a, ac) > 60).sort((p, q) => distNm(p, ac) - distNm(q, ac)).slice(0, 3))
+  const off = destPoint(ac, (ac.hdg + st.rng.pick([-70, 70]) + 360) % 360, 30)
+  ac.tgtAlt = Math.min(ac.tgtAlt, 20000)
   ac.nav = { mode: 'ROUTE', wps: [{ name: 'DEV', ...off }, { name: ap.icao, lat: ap.lat, lon: ap.lon }], wpi: 0, final: 'LAND', dest: ap.icao }
-  st.scheduled.push({ at: st.t + 60, fn: 'noop', args: [] })
   const inc = openIncident(st, { kind: 'UNLAWFUL_7500', title: `${ac.callsign} 7500 UNLAWFUL INTERFERENCE`, severity: 3, entityId: ac.id, needs: 'ACKNOWLEDGE; SHADOW; ALERT AIRFIELD', deadlineSec: 1800 })
   say(st, { channel: 'ATC', from: 'AREA CONTROL', to: 'OPS', text: `Priority. ${rt(ac)} squawking seven five zero zero, flight has deviated from filed route, not responding to calls. ${ac.typeId}, ${flStr(ac.alt)}, ${areaText(ac)}.`, voice: 'CONTROLLER', sev: 'URGENT', ref: inc.id, refKind: 'incident' })
   st.events.push({ type: 'emergency', trackId: st.trackByEntity[ac.id] ?? '', code: '7500' })

@@ -36,10 +36,10 @@ export const SCENARIOS: ScenarioDef[] = [
       { id: 'c', text: 'Use the ATC query or registry at least twice', test: (st) => Object.values(st.tracks).filter((t) => t.checks.atc || t.checks.registry).length >= 2, optional: true },
     ],
     mentor: ['Select a track and read the evidence table in the Track Detail panel. Red rows are conflicts.', 'No flight plan correlation? Try the ATC QUERY — area control may hold a plan the RAP does not.', 'Primary-only contacts have no squawk. Dispatch nothing yet: query ATC, then consider an IDENTIFY operation.'] },
-  { id: 'T2', title: 'T2 · WATCHING THE GAP', kind: 'TRADE', limitMin: 60, unlock: 'T1',
-    brief: ['Benbecula and Saxa Vord radars are offline for maintenance, leaving a gap over the Atlantic approaches.', 'A large foreign aircraft is expected to probe the gap.', 'Cover the gap with an E-3D patrol and make sure the contact is visually identified.'],
+  { id: 'T2', title: 'T2 · WATCHING THE GAP', kind: 'TRADE', limitMin: 120, unlock: 'T1',
+    brief: ['Benbecula and Saxa Vord radars are offline for maintenance, leaving a gap over the Atlantic approaches.', 'A large foreign aircraft is expected to probe the gap in about 20 minutes.', 'Cover the gap with an E-3D patrol and make sure the contact is visually identified.'],
     cfg: { traffic: 0.7, weather: 'CLEAR', hour: 13, seed: 4102, complexity: 0.1, radarOff: ['BENB', 'SAXA'], incidents: false, intel: true, radarFaults: false },
-    setup: (st) => { spawnEvent(st, 'foreign'); for (const a of Object.values(st.assets)) if (a.typeId === 'F3') a.readiness = a.readiness }, 
+    setup: (st) => { st.scheduled.push({ at: st.t + 1200, fn: 'scn-foreign', args: [] }) },
     objectives: [
       { id: 'a', text: 'Establish an AEW (E-3D) patrol west of Scotland', test: (st) => Object.values(st.ops).some((o) => (o.type === 'PATROL' || o.type === 'MONITOR') && st.assets[o.assets[0]]?.typeId === 'E3D' && o.stage >= 3) },
       { id: 'b', text: 'Visually identify the foreign aircraft', test: (st) => Object.values(st.tracks).some((t) => t.vid && st.aircraft[t.entityId]?.truth.intent === 'foreignState') || Object.values(st.incidents).some((i) => i.kind === 'FOREIGN_STATE' && i.status === 'RESOLVED'), fail: (st) => st.incidents.some((i) => i.kind === 'FOREIGN_STATE' && i.status === 'FAILED') },
@@ -76,7 +76,7 @@ export const SCENARIOS: ScenarioDef[] = [
       { id: 'c', text: 'Never lose an aircraft or suffer bingo', test: (st) => st.score.bingoEvents === 0, fail: (st) => Object.values(st.assets).some((a) => a.defect?.startsWith('LOST')) },
     ],
     mentor: ['Airfield fuel is finite — see the Airfields panel. Lyneham holds the strategic stock.', 'SUPPLY needs a Hercules on the ground at the SOURCE base. Cargo comes out of that base\'s stock.', 'ATC queries cost nothing. Use them before launching fighters at harmless aircraft.'] },
-  { id: 'T6', title: 'T6 · MAYDAY', kind: 'TRADE', limitMin: 50, unlock: 'T5',
+  { id: 'T6', title: 'T6 · MAYDAY', kind: 'TRADE', limitMin: 70, unlock: 'T5',
     brief: ['Three civil incidents will develop in quick succession: an engine failure, a radio failure and unlawful interference.', 'Acknowledge each, alert airfields and keep eyes on the aircraft until they land.'],
     cfg: { traffic: 1, weather: 'CLEAR', hour: 11, seed: 4106, complexity: 0, incidents: false, intel: false, radarFaults: false },
     setup: (st) => { st.scheduled.push({ at: st.t + 120, fn: 'scn-7700', args: [] }, { at: st.t + 600, fn: 'scn-7600', args: [] }, { at: st.t + 1100, fn: 'scn-7500', args: [] }) },
@@ -192,6 +192,7 @@ export function setupScenario(st: GameState) {
     { id: 'a', text: 'Resolve all opening incidents', done: false, failed: false }, { id: 'b', text: 'No misidentifications', done: false, failed: false, optional: true }, { id: 'c', text: 'Survive the watch (45 min) with overall ≥ 60', done: false, failed: false },
   ]
   if (cfg.mode === 'COMBAT') st.objectives = [{ id: 'a', text: 'Maintain an accurate Recognised Air Picture', done: false, failed: false, optional: true }, { id: 'b', text: 'Keep every incident handled', done: false, failed: false, optional: true }]
+  st.flags.started = true
   say(st, { channel: 'OPS', from: 'WATCH SUPERVISOR', to: 'ALL', text: `Watch commencing ${fmtHM(st.t)}Z. Radar network ${st.radars.filter((r) => r.status === 'OPERATIONAL' && !r.airborne).length} of 8 stations operational.`, voice: 'OPS', speak: false })
 }
 
@@ -200,11 +201,13 @@ export function scenarioScheduled(st: GameState, fn: string) {
   else if (fn === 'scn-7600') spawnEvent(st, '7600')
   else if (fn === 'scn-7500') spawnEvent(st, '7500')
   else if (fn === 'scn-radar') spawnEvent(st, 'radar')
+  else if (fn === 'scn-foreign') spawnEvent(st, 'foreign', { start: { lat: 58.8, lon: -20 } })
   else if (fn === 'scn-intel') spawnEvent(st, 'noise')
 }
 
 /** Evaluate objectives & end conditions. */
 export function evaluateObjectives(st: GameState) {
+  if (!st.flags.started) return
   const sc = st.cfg.scenarioId ? SCENARIO_MAP[st.cfg.scenarioId] : null
   // repairs counter for T7
   for (const r of st.radars) if (r.status === 'OPERATIONAL' && st.flags['wasMaint:' + r.id]) { st.flags['wasMaint:' + r.id] = false; st.flags.repairs = val(st, 'repairs') + 1 } else if (r.status === 'MAINTENANCE') st.flags['wasMaint:' + r.id] = true
