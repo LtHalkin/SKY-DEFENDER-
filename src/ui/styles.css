@@ -161,3 +161,55 @@ button.mini { padding:0 .35rem; font-size:.62rem; margin-left:.4rem; }
 
 .sg-speed { display:grid; grid-template-columns:repeat(4,1fr); gap:.3rem; margin-top:.3rem; } .sg-speed button { display:flex; flex-direction:column; gap:.15rem; padding:.45rem .2rem; font-size:.72rem; } .sg-speed button small { font-size:.6rem; color:#8fb8a0; } .sg-speed button.on { background:#1f6a3a; color:#fff; border-color:#39ff7a; } .sg-speed button.on small { color:#d6ffe3; }
 .settings button.on { background:#1f6a3a; color:#fff; }
+/* ===== campaign ===== */
+.go-row { display:flex; gap:1rem; flex-wrap:wrap; align-items:stretch; }
+.big-go { display:flex; flex-direction:column; align-items:flex-start; gap:.2rem; } .big-go small { font-size:.7rem; letter-spacing:.05em; color:#a8f0c0; }
+.big-go.alt { border-color:#4db8ff; background:rgba(77,184,255,.1); box-shadow:0 0 18px rgba(77,184,255,.25); animation:none; }
+.campaign h2 { color:#39ff7a; letter-spacing:.15em; font-size:1.1rem; }
+.mission-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(19rem,1fr)); gap:.9rem; margin-top:1rem; }
+.mission { text-align:left; padding:.9rem; display:flex; flex-direction:column; gap:.4rem; background:rgba(5,16,10,.92); border:1px solid #1f6a3a; font-size:.85rem; }
+.mission b { color:#fff; font-size:1rem; letter-spacing:.08em; } .mission.done { border-color:#ffde59; } .mission.locked { opacity:.45; }
+.mission:hover:not(:disabled) b, .mission:hover:not(:disabled) .dim { color:#021208; }
+.mission .tags { display:flex; gap:.35rem; flex-wrap:wrap; } .mission .tags i { font-style:normal; font-size:.62rem; border:1px solid #1f6a3a; padding:0 .3rem; color:#a8c8b4; }
+.stars span { color:#334; font-size:1.1rem; margin-right:.1rem; } .stars span.on { color:#ffde59; text-shadow:0 0 6px rgba(255,222,89,.6); } .stars.big span { font-size:2.4rem; }
+.mission-res { text-align:center; margin:.4rem 0 .8rem; } .mission-res > div { margin:.15rem 0; }
+.debrief-box h3 { font-size:.85rem; letter-spacing:.12em; margin:.8rem 0 .3rem; }
+.tbl-wrap { overflow-x:auto; }
+/* ===== in-game objectives ===== */
+.sg-obj { position:absolute; left:23rem; top:6.4rem; z-index:6; background:rgba(5,16,10,.92); border:1px solid #ffde59; padding:.4rem .7rem; font-size:.78rem; min-width:16rem; max-width:24rem; cursor:pointer; }
+.sg-obj .sg-ph { color:#ffde59; border-color:#5a4a10; }
+.sg-obj > div { margin:.12rem 0; }
+b.night { color:#9fb6ff; }
+.sg-mnav { display:none; }
+/* ===== mobile & touch ===== */
+.sg-radar canvas { touch-action:none; }
+@media (max-width: 900px), (pointer: coarse) and (max-width: 1366px) {
+  button { min-height:2.6rem; }
+  .topnav { overflow-x:auto; padding:.4rem .6rem; gap:.2rem; } .topnav .brand { font-size:.9rem; margin-right:.4rem; } .topnav button { padding:.4rem .6rem; white-space:nowrap; }
+  .page { padding:1rem; top:3.4rem; }
+  .home .logo { font-size:2.2rem; letter-spacing:.15em; } .lead { font-size:1rem; }
+  .big-go { font-size:1.15rem; padding:.8rem 1.2rem; width:100%; }
+  .how { grid-template-columns:1fr 1fr; } .cards .card { min-width:0; flex:1 1 45%; }
+  .grid-cards, .mission-grid { grid-template-columns:1fr; }
+  .tabs { flex-wrap:nowrap; overflow-x:auto; } .tabs button { white-space:nowrap; }
+  .tbl td, .tbl th { padding:.4rem; font-size:.78rem; } .hangar { overflow-x:auto; }
+  .settings .row { flex-wrap:wrap; } .settings .row > span:first-child { width:100%; }
+  .debrief-box { width:96vw; padding:1rem; }
+}
+.sg.mobile .opt { display:none !important; }
+.sg.mobile .sg-hud { top:.3rem; left:.3rem; right:.3rem; flex-wrap:wrap; gap:.25rem; }
+.sg.mobile .sg-box { min-width:0; padding:.15rem .4rem; } .sg.mobile .sg-box b { font-size:1.05rem; } .sg.mobile .sg-box small { font-size:.5rem; }
+.sg.mobile .sg-ctl { flex-wrap:wrap; } .sg.mobile .sg-ctl button { padding:.3rem .5rem; font-size:.75rem; min-height:2.2rem; }
+.sg.mobile .sg-hint { top:auto; bottom:6.2rem; left:.3rem; right:.3rem; font-size:.68rem; max-width:none; }
+.sg.mobile .sg-obj { left:.3rem; top:auto; bottom:8.4rem; max-width:70vw; min-width:0; font-size:.7rem; }
+.sg.mobile .sg-bar { left:.3rem; right:.3rem; bottom:3.6rem; font-size:.78rem; padding:.4rem .6rem; }
+.sg.mobile .sg-panel { display:none; left:0 !important; right:0 !important; top:auto !important; width:auto !important; bottom:3.2rem !important; max-height:55vh; height:auto !important; border-width:1px 0 0; z-index:12; }
+.sg.mobile.mob-CONTACT .sg-contact, .sg.mobile.mob-RADIO .sg-radio, .sg.mobile.mob-SORTIES .sg-sorties { display:block; }
+.sg.mobile.mob-CONTACT .sg-bar, .sg.mobile.mob-RADIO .sg-bar, .sg.mobile.mob-SORTIES .sg-bar, .sg.mobile:not(.mob-MAP) .sg-hint, .sg.mobile:not(.mob-MAP) .sg-obj { display:none; }
+.sg.mobile .sg-radio { display:none; flex-direction:column; } .sg.mobile.mob-RADIO .sg-radio { display:flex; height:50vh !important; }
+.sg.mobile .sg-mnav { display:flex; position:absolute; left:0; right:0; bottom:0; height:3.2rem; z-index:13; background:#06120b; border-top:1px solid #39ff7a; }
+.sg.mobile .sg-mnav button { flex:1; border:0; border-right:1px solid #1f6a3a; font-size:.8rem; letter-spacing:.08em; background:transparent; } .sg.mobile .sg-mnav button.on { background:#1f6a3a; color:#fff; }
+.sg.mobile .sg-btns button { padding:.8rem .3rem; font-size:.82rem; }
+.sg.mobile .sg-popup { width:96vw; left:2vw; transform:none; top:4.6rem; max-height:70vh; overflow:auto; padding:.7rem; }
+.sg.mobile .sg-speed { grid-template-columns:repeat(2,1fr); }
+.sg.mobile .sg-panel { background:#04100a !important; }

@@ -4,13 +4,14 @@ import type { GameState } from '../sim/types'
 import { computeScores } from '../sim/scoring'
 import { audio } from './audio'
 import { levelOf, loadSave, writeSave, MEDALS, type Save } from '../game/save'
+import { MISSION_MAP, missionStars } from '../sim/campaign'
 
-export type Screen = 'HOME' | 'SHOP' | 'HANGAR' | 'STATS' | 'SETTINGS' | 'GAME' | 'DEBRIEF'
+export type Screen = 'HOME' | 'CAMPAIGN' | 'SHOP' | 'HANGAR' | 'STATS' | 'SETTINGS' | 'GAME' | 'DEBRIEF'
 export interface View { lat: number; lon: number; rangeNm: number }
 export type PickMode = null | { kind: 'point'; label: string; cb: (p: { lat: number; lon: number }) => void }
 export interface Fx { kind: string; lat: number; lon: number; t0: number; text?: string; n?: number }
 export interface Popup { id: string; kind: 'hostile' | 'refused' | 'complied' | 'lowfuel'; trackId: string; t0: number }
-export interface Reward { base: number; airspaceBonus: number; gradeBonus: number; total: number; xp: number; levelBefore: number; levelAfter: number; newMedals: string[] }
+export interface Reward { mission?: { id: string; stars: number; prev: number; bonus: number }; base: number; airspaceBonus: number; gradeBonus: number; total: number; xp: number; levelBefore: number; levelAfter: number; newMedals: string[] }
 export const SHIFT_SEC = 2400 // sim seconds; at normal speed (4x) this is a 10-minute shift
 export const BASE_SPEED = 4
 
@@ -39,13 +40,18 @@ class Store {
   applyAudio() { const s = this.save.settings; audio.volume = s.volume; audio.voiceOn = s.voice; audio.sfxOn = s.sfx; audio.eleven.key = s.elevenOn !== false ? s.elevenKey ?? '' : '' }
   get level() { return levelOf(this.save.xp).level }
 
-  startShift() {
+  lastMission: string | null = null
+  pendingMission: string | null = null
+  startShift(missionId?: string) {
     audio.unlock(); this.applyAudio(); audio.stopAll()
     const lvl = this.level, r = Math.random
+    const m = missionId ? MISSION_MAP[missionId] : undefined
+    this.lastMission = m?.id ?? null
+    const night = !m && lvl >= 4 && r() < 0.2
     const cfg = defaultConfig({
-      mode: 'SANDBOX', scenarioId: 'QUICK', seed: Math.floor(r() * 900000) + 1000, startHour: 8 + Math.floor(r() * 10), traffic: 0.75,
-      weather: lvl < 3 ? 'CLEAR' : r() < 0.6 ? 'CLEAR' : 'RAIN', complexity: 1, tension0: Math.min(0.9, 0.2 + lvl * 0.05), growth: false,
-      fleet: this.save.fleet, batteries: this.save.batteries, upgrades: this.save.upgrades, hostiles: true, level: lvl,
+      mode: 'SANDBOX', scenarioId: 'QUICK', seed: m?.seed ?? Math.floor(r() * 900000) + 1000, startHour: m?.hour ?? (night ? 22 : 8 + Math.floor(r() * 10)), traffic: m ? 0.6 : 0.75,
+      weather: m?.weather ?? (lvl < 3 ? 'CLEAR' : r() < 0.6 ? 'CLEAR' : 'RAIN'), complexity: m ? 0.4 : 1, tension0: m ? 0.15 : Math.min(0.9, 0.2 + lvl * 0.05), growth: false,
+      fleet: this.save.fleet, batteries: this.save.batteries, extraRadars: this.save.radars, upgrades: this.save.upgrades, hostiles: !m, level: lvl, mission: m?.id, radarOff: m?.radarOff ?? [],
     })
     const e = new SimEngine(cfg); e.warm(150)
     e.st.flags.quick = true; e.st.nextEvent = e.st.t + 120
@@ -69,7 +75,7 @@ class Store {
       this.acc += dtr * this.speed
       let n = Math.floor(this.acc); this.acc -= n; n = Math.min(n, 60)
       if (n > 0) this.engine!.step(n)
-      if (st.t - st.startT >= SHIFT_SEC && !st.ended) { st.ended = true; st.flags.result = 'COMPLETE' }
+      if (!st.cfg.mission && st.t - st.startT >= SHIFT_SEC && !st.ended) { st.ended = true; st.flags.result = 'COMPLETE' }
     }
     this.drain()
     if (st.ended) this.finish()
@@ -105,7 +111,14 @@ class Store {
     const base = st.coins
     const airspaceBonus = full ? Math.round(st.airspace * 1.5) : 0
     const gradeBonus = full ? ({ A: 120, B: 70, C: 35, D: 10, E: 0 } as Record<string, number>)[scores.grade] ?? 0 : 0
-    const total = base + airspaceBonus + gradeBonus
+    let mission: Reward['mission']
+    if (st.cfg.mission) {
+      const md = MISSION_MAP[st.cfg.mission], stars = missionStars(st, scores.overall), prev = sv.campaign[md.id] ?? 0
+      const bonus = (prev === 0 && stars > 0 ? md.reward : 0) + Math.max(0, stars - Math.max(prev, 1)) * Math.round(md.reward * 0.25)
+      mission = { id: md.id, stars, prev, bonus }
+      if (stars > prev) sv.campaign[md.id] = stars
+    }
+    const total = base + airspaceBonus + gradeBonus + (mission?.bonus ?? 0)
     const xp = Math.max(0, total) + (full ? 50 : 10)
     sv.coins = Math.max(0, sv.coins + total); sv.xp += xp
     sv.stats.shifts++; sv.stats.splashes += st.splashes; sv.stats.ids += Math.floor(st.score.idCorrect); sv.stats.emergencies += Math.floor(st.score.incidentsHandled)
@@ -119,7 +132,7 @@ class Store {
     give('grade_a', full && scores.grade === 'A'); give('veteran', sv.stats.shifts >= 10); give('collector', sv.fleet.length >= 8)
     sv.tutorial = true; sv.lastShift = { grade: scores.grade, score: scores.overall, coins: total }
     this.persist()
-    this.debrief = { scores, st, result, reward: { base, airspaceBonus, gradeBonus, total, xp, levelBefore, levelAfter: this.level, newMedals: earned } }
+    this.debrief = { scores, st, result, reward: { mission, base, airspaceBonus, gradeBonus, total, xp, levelBefore, levelAfter: this.level, newMedals: earned } }
     this.paused = true; this.screen = 'DEBRIEF'; this.stop(); this.notify()
   }
   select(trackId?: string) { this.sel = { track: trackId }; this.stepMsg = ''; this.notify() }

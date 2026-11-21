@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ASSET_TYPES, BATTERY_TYPES, SAM_SITES, SITE_MAP } from '../sim/data/aircraftTypes'
+import { ASSET_TYPES, BATTERY_TYPES, GROUND_RADARS, RADAR_SITES, RADAR_SITE_MAP, SAM_SITES, SITE_MAP } from '../sim/data/aircraftTypes'
+import { MISSIONS, MISSION_MAP, type Mission } from '../sim/campaign'
 import { store, useStore } from './store'
 import { Game, VoiceSetup } from './Game'
 import { audio } from './audio'
@@ -9,7 +10,7 @@ import { exportSave, freshSave, importSave, levelOf, MEDALS, newId, rankOf, rede
 export function App() {
   const screen = useStore((s) => s.screen)
   useEffect(() => {
-    const fit = () => { document.documentElement.style.fontSize = Math.max(11, Math.min(34, Math.min(innerWidth / 1920, innerHeight / 1080) * 16)) + 'px' }
+    const fit = () => { document.documentElement.style.fontSize = (innerWidth < 900 ? 14 : Math.max(11, Math.min(34, Math.min(innerWidth / 1920, innerHeight / 1080) * 16))) + 'px' }
     fit(); addEventListener('resize', fit); return () => removeEventListener('resize', fit)
   }, [])
   return <div className="app">
@@ -55,12 +56,12 @@ function Shell() {
     <RadarBg />
     <div className="topnav">
       <span className="brand" onClick={() => nav('HOME')}>SKY DEFENDER</span>
-      {(['HOME', 'SHOP', 'HANGAR', 'STATS', 'SETTINGS'] as const).map((s) => <button key={s} className={screen === s ? 'on' : ''} onClick={() => nav(s)}>{s === 'STATS' ? 'RECORDS' : s}</button>)}
+      {(['HOME', 'CAMPAIGN', 'SHOP', 'HANGAR', 'STATS', 'SETTINGS'] as const).map((s) => <button key={s} className={screen === s ? 'on' : ''} onClick={() => nav(s)}>{s === 'STATS' ? 'RECORDS' : s}</button>)}
       <span className="spacer" />
       <span className="pill">{rankOf(lv.level).toUpperCase()} · LV {lv.level}</span><span className="pill coin">◆ {sv.coins.toLocaleString()}</span>
     </div>
     <div className="page">
-      {screen === 'HOME' && <Home />}{screen === 'SHOP' && <Shop />}{screen === 'HANGAR' && <Hangar />}{screen === 'STATS' && <Stats />}{screen === 'SETTINGS' && <Settings />}
+      {screen === 'HOME' && <Home />}{screen === 'CAMPAIGN' && <Campaign />}{screen === 'SHOP' && <Shop />}{screen === 'HANGAR' && <Hangar />}{screen === 'STATS' && <Stats />}{screen === 'SETTINGS' && <Settings />}
     </div>
   </div>
 }
@@ -74,7 +75,8 @@ function Home() {
       <div className="logo">SKY DEFENDER</div>
       <div className="sub">UK AIR DEFENCE · 1998</div>
       <p className="lead">You run the radar. Find the unknowns, help aircraft in trouble, turn intruders away — and when a bandit refuses, shoot it down before it reaches its target.</p>
-      <button className="big-go" onClick={() => store.startShift()}>START SHIFT {sv.stats.shifts + 1} ▶</button>
+      <div className="go-row"><button className="big-go" onClick={() => store.setScreen('CAMPAIGN')}>CAMPAIGN ▶<small>{Object.values(sv.campaign).reduce((a, b) => a + b, 0)} / {MISSIONS.length * 3} ★</small></button>
+        <button className="big-go alt" onClick={() => store.startShift()}>FREE SHIFT {sv.stats.shifts + 1} ▶<small>random raids, endless progression</small></button></div>
       {!sv.tutorial && <p className="dim">First shift: tips at the top of the screen walk you through it.</p>}
     </div>
     <div className="cards">
@@ -98,27 +100,30 @@ function Shop() {
   const [base, setBase] = useState('EGXE'); const [site, setSite] = useState('LONDON'); const [msg, setMsg] = useState('')
   useStore((s) => s.version)
   const sv = store.save, lvl = levelOf(sv.xp).level
+  const [rsite, setRsite] = useState('STORNOWAY')
   const buy = (id: string, price: number, kind: ItemKind) => {
     if (sv.coins < price) { setMsg('Not enough Skycoins'); return }
     sv.coins -= price
-    if (kind === 'SAM') sv.batteries.push({ id: newId('S'), typeId: id, site }); else sv.fleet.push({ id: newId('J'), typeId: id, base })
-    store.persist(); audio.coin(); setMsg(`Bought ${kind === 'SAM' ? BATTERY_TYPES[id].short + ' at ' + SITE_MAP[site].name : ASSET_TYPES[id].short + ' at ' + BASES.find((b) => b.icao === base)!.name}`); store.notify()
+    if (kind === 'SAM') sv.batteries.push({ id: newId('S'), typeId: id, site }); else if (kind === 'RADAR') sv.radars.push({ id: newId('R'), typeId: id, site: rsite }); else sv.fleet.push({ id: newId('J'), typeId: id, base })
+    store.persist(); audio.coin(); setMsg(`Bought ${kind === 'SAM' ? BATTERY_TYPES[id].short + ' at ' + SITE_MAP[site].name : kind === 'RADAR' ? GROUND_RADARS[id].short + ' at ' + RADAR_SITE_MAP[rsite].name : ASSET_TYPES[id].short + ' at ' + BASES.find((b) => b.icao === base)!.name}`); store.notify()
   }
   return <div className="shop">
-    <div className="tabs">{(['JET', 'SUPPORT', 'SAM', 'UPGRADE'] as ItemKind[]).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t === 'JET' ? 'INTERCEPTORS' : t === 'SUPPORT' ? 'TANKERS & RADAR' : t === 'SAM' ? 'MISSILE BATTERIES' : 'UPGRADES'}</button>)}
+    <div className="tabs">{(['JET', 'SUPPORT', 'SAM', 'RADAR', 'UPGRADE'] as ItemKind[]).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t === 'JET' ? 'INTERCEPTORS' : t === 'SUPPORT' ? 'TANKERS & AEW' : t === 'SAM' ? 'MISSILE BATTERIES' : t === 'RADAR' ? 'GROUND RADARS' : 'BASE UPGRADES'}</button>)}
       <span className="spacer" />
-      {tab !== 'UPGRADE' && tab !== 'SAM' && <label>DELIVER TO <select value={base} onChange={(e) => setBase(e.target.value)}>{BASES.map((b) => <option key={b.icao} value={b.icao}>{b.name}</option>)}</select></label>}
+      {tab === 'RADAR' && <label>BUILD AT <select value={rsite} onChange={(e) => setRsite(e.target.value)}>{RADAR_SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
+      {tab !== 'UPGRADE' && tab !== 'SAM' && tab !== 'RADAR' && <label>DELIVER TO <select value={base} onChange={(e) => setBase(e.target.value)}>{BASES.map((b) => <option key={b.icao} value={b.icao}>{b.name}</option>)}</select></label>}
       {tab === 'SAM' && <label>DEPLOY AT <select value={site} onChange={(e) => setSite(e.target.value)}>{SAM_SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
     </div>
     {msg && <div className="toast">{msg}</div>}
     <div className="grid-cards">
       {tab !== 'UPGRADE' && ITEMS.filter((i) => i.kind === tab).map((i) => {
-        const locked = lvl < i.level, owned = tab === 'SAM' ? sv.batteries.filter((b) => b.typeId === i.id).length : sv.fleet.filter((f) => f.typeId === i.id).length
-        const t = ASSET_TYPES[i.id], b = BATTERY_TYPES[i.id]
+        const locked = lvl < i.level, owned = tab === 'SAM' ? sv.batteries.filter((b) => b.typeId === i.id).length : tab === 'RADAR' ? sv.radars.filter((r) => r.typeId === i.id).length : sv.fleet.filter((f) => f.typeId === i.id).length
+        const t = tab === 'RADAR' ? undefined : ASSET_TYPES[i.id], b = BATTERY_TYPES[i.id], g = GROUND_RADARS[i.id]
         return <div key={i.id} className={`item-card ${locked ? 'locked' : ''}`}>
-          <div className="ic-h"><b>{t?.short ?? b.short}</b>{owned > 0 && <span className="owned">OWNED ×{owned}</span>}</div>
+          <div className="ic-h"><b>{g?.short ?? t?.short ?? b.short}</b>{owned > 0 && <span className="owned">OWNED ×{owned}</span>}</div>
           <div className="dim">{i.name}</div><p>{i.blurb}</p>
           {t && <>{t.role === 'FIGHTER' ? <><STAT k="SPEED" v={t.maxKt} max={760} /><STAT k="RANGE" v={t.fuelCap / t.burnCruise} max={3.5} /><STAT k="RADAR" v={t.radar} max={100} /><STAT k="MISSILES" v={t.missiles} max={6} /><STAT k="HIT %" v={t.pk} max={1} /></> : <><STAT k="SPEED" v={t.maxKt} max={760} /><STAT k="ENDURANCE" v={t.fuelCap / t.burnCruise} max={12} />{t.offload > 0 && <STAT k="FUEL TO GIVE" v={t.offload} max={60000} />}{t.role === 'AEW' && <STAT k="RADAR" v={t.radar} max={220} />}</>}</>}
+          {g && <><STAT k="RANGE" v={g.range} max={260} /><STAT k="LOW-LEVEL COVER" v={g.antennaFt} max={2600} /><STAT k="UPDATE RATE" v={12 - g.sweepSec} max={8} /></>}
           {b && <><STAT k="RANGE" v={b.range} max={45} /><STAT k="MISSILES" v={b.missiles} max={8} /><STAT k="RELOAD" v={140 - b.reloadSec} max={140} /><STAT k="HIT %" v={b.pk} max={1} /></>}
           <button className="buy" disabled={locked || sv.coins < i.price} onClick={() => buy(i.id, i.price, i.kind)}>{locked ? `🔒 LEVEL ${i.level}` : `BUY ◆ ${i.price.toLocaleString()}`}</button>
         </div>
@@ -152,6 +157,12 @@ function Hangar() {
         <td><button onClick={() => { if (confirm(`Sell ${t.short} for ◆${sellPrice(b.typeId)}?`)) { sv.coins += sellPrice(b.typeId); sv.batteries = sv.batteries.filter((x) => x !== b); change() } }}>SELL ◆{sellPrice(b.typeId)}</button></td></tr> })}
     </tbody></table>
     {!sv.batteries.length && <p className="dim">No batteries. Buy one in the SHOP.</p>}
+    <h2>GROUND RADARS</h2>
+    {sv.radars.length > 0 ? <div className="tbl-wrap"><table className="tbl"><thead><tr><th>RADAR</th><th>RANGE</th><th>SITE</th><th></th></tr></thead><tbody>
+      {sv.radars.map((r) => { const t = GROUND_RADARS[r.typeId]; return <tr key={r.id}><td><b>{t.short}</b> <span className="dim">{t.name}</span></td><td>{t.range} NM</td>
+        <td><select value={r.site} onChange={(e) => { r.site = e.target.value; change() }}>{RADAR_SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></td>
+        <td><button onClick={() => { if (confirm(`Sell ${t.short} for ◆${sellPrice(r.typeId)}?`)) { sv.coins += sellPrice(r.typeId); sv.radars = sv.radars.filter((x) => x !== r); change() } }}>SELL ◆{sellPrice(r.typeId)}</button></td></tr> })}
+    </tbody></table></div> : <p className="dim">You rely on the eight RAF radar heads. Buy extra ground radars in the SHOP to fill gaps.</p>}
   </div>
 }
 
@@ -197,12 +208,17 @@ function Debrief() {
   const { scores, st, result, reward: r } = d
   const lvl = levelOf(store.save.xp)
   return <div className="modal"><div className="debrief-box">
-    <div className="db-title">{result === 'FAILED' ? 'AIRSPACE LOST' : result === 'COMPLETE' ? 'SHIFT COMPLETE' : 'SHIFT ENDED EARLY'}</div>
+    <div className="db-title">{r.mission ? (r.mission.stars > 0 ? 'MISSION ACCOMPLISHED' : 'MISSION FAILED') : result === 'FAILED' ? 'AIRSPACE LOST' : result === 'COMPLETE' ? 'SHIFT COMPLETE' : 'SHIFT ENDED EARLY'}</div>
+    {r.mission && <div className="mission-res"><div className="dim">{MISSION_MAP[r.mission.id].title}</div><div className="stars big">{[1, 2, 3].map((n) => <span key={n} className={n <= r.mission!.stars ? 'on' : ''}>★</span>)}</div>
+      {st.objectives.map((o) => <div key={o.id} className={o.done ? 'g' : 'r'}>{o.done ? '✓' : '✗'} {o.text}</div>)}
+      {r.mission.bonus > 0 && <div className="levelup">MISSION REWARD +{r.mission.bonus} ◆</div>}
+      <div className="dim small">★ objectives met · ★★ and airspace ≥ 75% · ★★★ and score ≥ 80</div></div>}
     <div className="gradeline"><span className={`grade g${scores.grade}`}>{scores.grade}</span><div><div>SCORE {scores.overall}/100</div><div className="dim">Airspace held {st.airspace}% · {st.splashes} bandits destroyed</div></div></div>
     <table className="tbl"><tbody>
       <tr><td>Earned during shift</td><td className={r.base >= 0 ? 'coin' : 'r'}>{r.base >= 0 ? '+' : ''}{r.base} ◆</td></tr>
       <tr><td>Airspace bonus</td><td className="coin">+{r.airspaceBonus} ◆</td></tr>
       <tr><td>Grade bonus</td><td className="coin">+{r.gradeBonus} ◆</td></tr>
+      {r.mission && r.mission.bonus > 0 && <tr><td>Mission reward</td><td className="coin">+{r.mission.bonus} ◆</td></tr>}
       <tr className="tot"><td>TOTAL</td><td className="coin">{r.total >= 0 ? '+' : ''}{r.total} ◆</td></tr>
       <tr><td>Experience</td><td>+{r.xp} XP</td></tr>
     </tbody></table>
@@ -211,6 +227,40 @@ function Debrief() {
     <div className="xp big"><i style={{ width: `${(lvl.into / lvl.need) * 100}%` }} /></div>
     <div className="grid2">{(['identification', 'awareness', 'resources', 'incidents'] as const).map((k) => <div className="kv" key={k}><span>{k.toUpperCase()}</span><b>{scores[k]}</b></div>)}</div>
     <div className="dim small">{st.coinLog.slice(-6).map((c, i) => <div key={i}>{c.n >= 0 ? '+' : ''}{c.n} · {c.why}</div>)}</div>
-    <div className="db-btns"><button onClick={() => store.quit()}>HOME</button><button onClick={() => { store.quit(); store.setScreen('SHOP') }}>SHOP</button><button className="go" onClick={() => store.startShift()}>NEXT SHIFT ▶</button></div>
+    <div className="db-btns"><button onClick={() => store.quit()}>HOME</button><button onClick={() => { store.quit(); store.setScreen('SHOP') }}>SHOP</button>
+      {r.mission ? <><button onClick={() => { store.quit(); store.setScreen('CAMPAIGN') }}>CAMPAIGN</button><button onClick={() => store.startShift(r.mission!.id)}>RETRY</button>
+        {(() => { const i = MISSIONS.findIndex((m) => m.id === r.mission!.id); const nx = MISSIONS[i + 1]; return nx && r.mission!.stars > 0 ? <button className="go" onClick={() => { store.quit(); store.pendingMission = nx.id; store.setScreen('CAMPAIGN') }}>NEXT MISSION ▶</button> : null })()}</>
+        : <button className="go" onClick={() => store.startShift()}>NEXT SHIFT ▶</button>}</div>
+  </div></div>
+}
+
+const unlocked = (i: number) => i === 0 || (store.save.campaign[MISSIONS[i - 1].id] ?? 0) > 0
+function Campaign() {
+  useStore((s) => s.version)
+  const [sel, setSel] = useState<string | null>(store.pendingMission)
+  useEffect(() => { store.pendingMission = null }, [])
+  const sv = store.save
+  const m = sel ? MISSION_MAP[sel] : null
+  return <div className="campaign">
+    <h2>CAMPAIGN — OPERATION NORTHERN SHIELD</h2>
+    <p className="dim">Ten missions of rising difficulty. Earn at least one star to unlock the next. Your shop purchases and upgrades carry into every mission.</p>
+    <div className="mission-grid">{MISSIONS.map((ms, i) => { const stars = sv.campaign[ms.id] ?? 0, open = unlocked(i); return (
+      <button key={ms.id} className={`mission ${open ? '' : 'locked'} ${stars ? 'done' : ''}`} disabled={!open} onClick={() => { audio.ui(); setSel(ms.id) }}>
+        <b>{ms.title}</b>
+        <div className="stars">{[1, 2, 3].map((n) => <span key={n} className={n <= stars ? 'on' : ''}>★</span>)}</div>
+        <span className="dim">{open ? ms.brief[0] : '🔒 Complete the previous mission'}</span>
+        <span className="tags">{ms.hour >= 21 || ms.hour < 5 ? <i>NIGHT</i> : null}{ms.weather !== 'CLEAR' ? <i>{ms.weather}</i> : null}{ms.radarOff?.length ? <i>RADARS DOWN</i> : null}<i className="coin">◆ {ms.reward}</i></span>
+      </button>) })}</div>
+    {m && <MissionBrief m={m} onClose={() => setSel(null)} />}
+  </div>
+}
+function MissionBrief({ m, onClose }: { m: Mission; onClose: () => void }) {
+  return <div className="modal" onClick={onClose}><div className="debrief-box" onClick={(e) => e.stopPropagation()}>
+    <div className="db-title">{m.title}</div>
+    {m.brief.map((b, i) => <p key={i}>{b}</p>)}
+    <h3 className="g">OBJECTIVES</h3>{m.objectives.map((o) => <div key={o.id}>○ {o.text}</div>)}
+    <h3 className="y">ADVICE</h3><p>{m.tip}</p>
+    <div className="dim small">{String(m.hour).padStart(2, '0')}00Z · {m.weather}{m.radarOff?.length ? ` · offline: ${m.radarOff.join(', ')}` : ''} · {m.minutes} sim-minutes · reward ◆{m.reward}</div>
+    <div className="db-btns"><button onClick={onClose}>BACK</button><button onClick={() => { onClose(); store.setScreen('SHOP') }}>SHOP FIRST</button><button className="go" onClick={() => store.startShift(m.id)}>LAUNCH MISSION ▶</button></div>
   </div></div>
 }

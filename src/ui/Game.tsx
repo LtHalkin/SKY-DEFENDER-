@@ -14,13 +14,16 @@ import { makeProj } from './proj'
 import { audio } from './audio'
 import { levelOf, rankOf } from '../game/save'
 import { hms } from './common'
+import { MISSION_MAP } from '../sim/campaign'
 
 const LAND = (geo as any).land as number[][][]
 const COAST = (geo as any).coast as number[][][]
 const isEm = (t: Track) => !!t.squawk && /^7[567]00$/.test(t.squawk)
-export const colourOf = (t: Track) => t.hostile ? '#ff3b3b' : isEm(t) ? '#ff9a2e' : t.complied ? '#7fe3ff' : t.category === 'SUSPICIOUS' || t.category === 'UNRESOLVED' ? '#c77dff' : t.category === 'UNKNOWN' || t.category === 'UNCORRELATED' ? '#ffe34d' : '#f2f2f2'
-export const wordOf = (t: Track) => t.hostile ? 'HOSTILE — weapons free' : isEm(t) ? 'EMERGENCY' : t.complied ? 'COMPLYING — leaving' : t.category === 'SUSPICIOUS' ? 'SUSPICIOUS' : t.category === 'UNRESOLVED' ? 'UNSURE — check it' : t.category === 'UNKNOWN' || t.category === 'UNCORRELATED' ? 'UNKNOWN — check it!' : 'SAFE'
-const pri = (t: Track) => (t.hostile ? 0 : isEm(t) ? 1 : t.category === 'SUSPICIOUS' || t.category === 'UNRESOLVED' ? 2 : t.category === 'UNKNOWN' || t.category === 'UNCORRELATED' ? 3 : 5)
+const isVip = (t: Track) => !!store.st && store.st.flags.vipId === t.entityId
+export const colourOf = (t: Track) => isVip(t) ? '#5ee6ff' : t.decoy ? '#93a9bb' : t.hostile ? '#ff3b3b' : isEm(t) ? '#ff9a2e' : t.complied ? '#7fe3ff' : t.category === 'SUSPICIOUS' || t.category === 'UNRESOLVED' ? '#c77dff' : t.category === 'UNKNOWN' || t.category === 'UNCORRELATED' ? '#ffe34d' : '#f2f2f2'
+export const wordOf = (t: Track) => isVip(t) ? 'VIP — protect it' : t.decoy ? (store.st?.aircraft[t.entityId]?.typeId === 'ALJ' ? 'ALLIED — not a threat' : 'DECOY — not a threat') : t.hostile ? 'HOSTILE — weapons free' : isEm(t) ? 'EMERGENCY' : t.complied ? 'COMPLYING — leaving' : t.category === 'SUSPICIOUS' ? 'SUSPICIOUS' : t.category === 'UNRESOLVED' ? 'UNSURE — check it' : t.category === 'UNKNOWN' || t.category === 'UNCORRELATED' ? 'UNKNOWN — check it!' : 'SAFE'
+const isNightAt = (s: GameState) => { const h = (s.t / 3600) % 24; return h < 5.5 || h > 20.5 }
+const pri = (t: Track) => t.decoy ? 5 : (t.hostile ? 0 : isEm(t) ? 1 : t.category === 'SUSPICIOUS' || t.category === 'UNRESOLVED' ? 2 : t.category === 'UNKNOWN' || t.category === 'UNCORRELATED' ? 3 : 5)
 function plane(ctx: CanvasRenderingContext2D, x: number, y: number, hdg: number, s: number, c: string) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(rad(hdg)); ctx.fillStyle = c
   ctx.beginPath(); ctx.moveTo(0, -s); ctx.lineTo(s * 0.18, -s * 0.2); ctx.lineTo(s * 0.9, s * 0.25); ctx.lineTo(s * 0.9, s * 0.45); ctx.lineTo(s * 0.18, s * 0.2); ctx.lineTo(s * 0.15, s * 0.7); ctx.lineTo(s * 0.45, s * 0.95); ctx.lineTo(s * 0.45, s * 1.1); ctx.lineTo(0, s * 0.95); ctx.lineTo(-s * 0.45, s * 1.1); ctx.lineTo(-s * 0.45, s * 0.95); ctx.lineTo(-s * 0.15, s * 0.7); ctx.lineTo(-s * 0.18, s * 0.2); ctx.lineTo(-s * 0.9, s * 0.45); ctx.lineTo(-s * 0.9, s * 0.25); ctx.lineTo(-s * 0.18, -s * 0.2); ctx.closePath(); ctx.fill(); ctx.restore()
@@ -39,13 +42,21 @@ function drawStatic(ctx: CanvasRenderingContext2D, s: GameState, w: number, h: n
   w += MARGIN * 2; h += MARGIN * 2
   ctx.font = `${12 * k}px "Lucida Console",monospace`
   ctx.fillStyle = '#05080b'; ctx.fillRect(0, 0, w, h)
-  ctx.fillStyle = '#0b1612'; ctx.beginPath()
+  const night = isNightAt(s)
+  ctx.fillStyle = night ? '#070d0b' : '#0b1612'; ctx.beginPath()
   for (const poly of LAND) poly.forEach((p, i) => (i ? ctx.lineTo(P.x(p[0]), P.y(p[1])) : ctx.moveTo(P.x(p[0]), P.y(p[1]))))
   ctx.fill()
-  ctx.strokeStyle = '#ff9a2e'; ctx.lineWidth = 1.5; ctx.beginPath()
+  ctx.strokeStyle = night ? '#a8621f' : '#ff9a2e'; ctx.lineWidth = 1.5; ctx.beginPath()
   for (const line of COAST) line.forEach((p, i) => (i ? ctx.lineTo(P.x(p[0]), P.y(p[1])) : ctx.moveTo(P.x(p[0]), P.y(p[1]))))
   ctx.stroke()
   for (const z of ZONES) { const x = P.x(z.lon), y = P.y(z.lat), r = z.r * P.pxPerNm(z.lat); ctx.fillStyle = 'rgba(170,20,20,0.28)'; ctx.strokeStyle = '#c33'; ctx.lineWidth = 1; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.strokeRect(x - r, y - r, r * 2, r * 2) }
+  for (const r of s.radars) {
+    if (r.note !== 'Player-owned') continue
+    const x = P.x(r.lon), y = P.y(r.lat)
+    ctx.strokeStyle = '#4db8ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y + 3 * k, 6 * k, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(x, y + 3 * k); ctx.lineTo(x, y + 10 * k); ctx.stroke()
+    ctx.fillStyle = '#9fd4ff'; ctx.fillText(r.name.split(' ')[0], x + 9 * k, y + 8 * k)
+  }
   const seen = new Set<string>()
   for (const a of AIRPORTS) {
     if (a.country !== 'GB' && a.country !== 'IE') continue
@@ -63,7 +74,7 @@ function paintStatic(ctx: CanvasRenderingContext2D, s: GameState, w: number, h: 
   const v = store.view, now = performance.now()
   const vk = `${v.lat},${v.lon},${v.rangeNm}`
   if (vk !== lastView) { lastView = vk; lastViewChange = now }
-  const sig = Object.values(s.assets).map((a) => a.baseId).sort().join() + Object.values(s.airfields).map((f) => (f.open ? 1 : 0)).join('')
+  const sig = (isNightAt(s) ? 'N' : 'D') + Object.values(s.assets).map((a) => a.baseId).sort().join() + Object.values(s.airfields).map((f) => (f.open ? 1 : 0)).join('')
   const stale = !cache.cv || cache.range !== v.rangeNm || cache.w !== w || cache.h !== h || cache.dpr !== dpr || cache.sig !== sig
   const moved = cache.lat !== v.lat || cache.lon !== v.lon
   const P1 = makeProj(w, h)
@@ -172,6 +183,10 @@ export function Game() {
   const [tab, setTab] = useState<'RADIO' | 'CONTACTS' | 'DEFENCES'>('RADIO')
   const [jet, setJet] = useState('')
   const [voice, setVoice] = useState(false)
+  const pts = useRef(new Map<number, { x: number; y: number }>()), pinch = useRef<{ d: number; range: number } | null>(null)
+  const mobile = useIsMobile()
+  const [mob, setMob] = useState<'MAP' | 'CONTACT' | 'RADIO' | 'SORTIES' | 'OBJ'>('MAP')
+  const [objOpen, setObjOpen] = useState(true)
   const speed = useStore((s) => s.speed), paused = useStore((s) => s.paused)
   const { track: selT, asset: selA, battery: selB } = useStore((s) => s.sel)
 
@@ -207,16 +222,29 @@ export function Game() {
     raf = requestAnimationFrame(frame); return () => { cancelAnimationFrame(raf); ro.disconnect() }
   }, [])
   const rect = () => wrap.current!.getBoundingClientRect()
-  const down = (e: React.PointerEvent) => { if (e.button !== 0) return; (e.target as HTMLElement).setPointerCapture(e.pointerId); drag.current = { x: e.clientX, y: e.clientY, lat: store.view.lat, lon: store.view.lon, moved: false } }
-  const move = (e: React.PointerEvent) => { const d = drag.current; if (!d) return; const dx = e.clientX - d.x, dy = e.clientY - d.y; if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true
+  const down = (e: React.PointerEvent) => {
+    if (e.button !== 0) return; try { (e.target as HTMLElement).setPointerCapture(e.pointerId) } catch { /* not all pointers can be captured */ }
+    pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pts.current.size === 2) { const [a, b] = [...pts.current.values()]; pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y), range: store.view.rangeNm }; if (drag.current) drag.current.moved = true; return }
+    drag.current = { x: e.clientX, y: e.clientY, lat: store.view.lat, lon: store.view.lon, moved: false }
+  }
+  const move = (e: React.PointerEvent) => {
+    if (pts.current.has(e.pointerId)) pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pinch.current && pts.current.size >= 2) { const [a, b] = [...pts.current.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); store.view = { ...store.view, rangeNm: Math.max(40, Math.min(1200, pinch.current.range * pinch.current.d / Math.max(20, d))) }; return }
+    const d = drag.current; if (!d) return; const dx = e.clientX - d.x, dy = e.clientY - d.y; if (Math.abs(dx) + Math.abs(dy) > (e.pointerType === 'touch' ? 10 : 4)) d.moved = true
     if (d.moved) { const r = rect(); const P = makeProj(r.width, r.height, { lat: d.lat, lon: d.lon, rangeNm: store.view.rangeNm }); const c = P.inv(P.cx - dx, P.cy - dy); store.view = { ...store.view, lat: Math.max(44, Math.min(66, c.lat)), lon: Math.max(-30, Math.min(15, c.lon)) } } }
-  const up = (e: React.PointerEvent) => { const d = drag.current; drag.current = null; if (!d || d.moved) return
+  const up = (e: React.PointerEvent) => {
+    pts.current.delete(e.pointerId)
+    if (pinch.current) { if (pts.current.size < 2) pinch.current = null; drag.current = null; store.notify(); return }
+    const d = drag.current; drag.current = null; if (!d || d.moved) return
     const r = rect(), x = e.clientX - r.left, y = e.clientY - r.top, ll = makeProj(r.width, r.height).inv(x, y)
     if (store.pick) { const cb = store.pick.cb; store.pick = null; cb(ll); store.notify(); return }
-    let best: (typeof hits)[0] | null = null, bd = 26 * 26
+    const rad2 = e.pointerType === 'touch' ? 44 * 44 : 26 * 26
+    let best: (typeof hits)[0] | null = null, bd = rad2
     for (const h of hits) { const dd = (h.x - x) ** 2 + (h.y - y) ** 2; if (dd < bd) { bd = dd; best = h } }
     audio.ui()
     if (best?.asset) store.sel = { asset: best.asset }; else if (best?.battery) store.sel = { battery: best.battery }; else if (best) store.sel = { track: best.id }; else store.sel = {}
+    if (mobile) setMob(best ? 'CONTACT' : 'MAP')
     store.stepMsg = ''; store.notify() }
   const wheel = (e: React.WheelEvent) => { store.view = { ...store.view, rangeNm: Math.max(40, Math.min(1200, store.view.rangeNm * Math.exp(e.deltaY * 0.0012))) }; store.notify() }
 
@@ -224,12 +252,13 @@ export function Game() {
   const ent = tr ? st.aircraft[tr.entityId] : undefined
   const tracks = liveTracks(st)
   const n = { unk: tracks.filter((t) => pri(t) === 3).length, sus: tracks.filter((t) => pri(t) === 2).length, hos: tracks.filter((t) => t.hostile).length, em: tracks.filter((t) => pri(t) === 1).length }
-  const left = Math.max(0, SHIFT_SEC - (st.t - st.startT)) / BASE_SPEED
+  const left = Math.max(0, ((st.flags.shiftSec as number) ?? SHIFT_SEC) - (st.t - st.startT)) / BASE_SPEED
+  const mission = st.cfg.mission ? MISSION_MAP[st.cfg.mission] : undefined
   const sc = computeScores(st)
   const lv = levelOf(store.save.xp)
   const say = (r: string | null) => { store.stepMsg = r ?? ''; if (!r) audio.ui(); store.notify() }
   const order = (spec: any) => say(store.dispatch({ c: 'op', spec: { ...spec, assetId: spec.assetId ?? (jet || undefined) } }))
-  const show = (t?: Track) => { if (t && !t.dropped) { store.sel = { track: t.id }; store.centreOn(t, Math.min(store.view.rangeNm, 250)) } }
+  const show = (t?: Track) => { if (t && !t.dropped) { store.sel = { track: t.id }; store.centreOn(t, Math.min(store.view.rangeNm, 250)); if (mobile) setMob('CONTACT') } }
   const fighters = Object.values(st.assets).filter((a) => ASSET_TYPES[a.typeId].role === 'FIGHTER')
   const avail = fighters.filter((a) => a.status === 'READY' || (a.ac && !a.opId))
 
@@ -267,20 +296,26 @@ export function Game() {
   }, [])
 
   return (
-    <div className="sg">
-      <div className="sg-radar" ref={wrap} onContextMenu={(e) => e.preventDefault()}><canvas ref={ref} onPointerDown={down} onPointerMove={move} onPointerUp={up} onWheel={wheel} style={{ cursor: store.pick ? 'crosshair' : 'default' }} /></div>
+    <div className={`sg ${mobile ? 'mobile' : ''} mob-${mob}`}>
+      <div className="sg-radar" ref={wrap} onContextMenu={(e) => e.preventDefault()}><canvas ref={ref} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} style={{ cursor: store.pick ? 'crosshair' : 'default' }} /></div>
       <div className="sg-hud">
-        <div className="sg-box rank"><small>{rankOf(lv.level).toUpperCase()} · LV {lv.level}</small><b className="coin">{st.coins >= 0 ? '+' : ''}{st.coins} ◆</b></div>
+        <div className="sg-box rank opt"><small>{rankOf(lv.level).toUpperCase()} · LV {lv.level}</small><b className="coin">{st.coins >= 0 ? '+' : ''}{st.coins} ◆</b></div>
         <div className="sg-box"><small>SHIFT TIME LEFT</small><b className="sg-time">{Math.floor(left / 60)}:{String(Math.floor(left % 60)).padStart(2, '0')}</b></div>
-        <div className="sg-box"><small>UNKNOWN</small><b className="y">{n.unk}</b></div><div className="sg-box"><small>SUSPICIOUS</small><b className="p">{n.sus}</b></div>
+        <div className="sg-box"><small>UNKNOWN</small><b className="y">{n.unk}</b></div><div className="sg-box opt"><small>SUSPICIOUS</small><b className="p">{n.sus}</b></div>
         <div className={`sg-box ${n.hos ? 'pulse' : ''}`}><small>HOSTILE</small><b className="r">{n.hos}</b></div><div className={`sg-box ${n.em ? 'pulse' : ''}`}><small>EMERGENCY</small><b className="o">{n.em}</b></div>
         <div className="sg-box"><small>AIRSPACE HELD</small><b className={st.airspace > 60 ? 'g' : st.airspace > 30 ? 'o' : 'r'}>{st.airspace}%</b><i className="air" style={{ width: st.airspace + '%' }} /></div>
-        <div className="sg-box"><small>SPLASHES / GRADE</small><b>{st.splashes} · {sc.grade}</b></div>
+        {isNightAt(st) && <div className="sg-box opt"><small>CONDITIONS</small><b className="night">NIGHT</b></div>}
+        <div className="sg-box opt"><small>SPLASHES / GRADE</small><b>{st.splashes} · {sc.grade}</b></div>
         <div className="sg-ctl"><button onClick={() => store.togglePause()} className={paused ? 'on' : ''} title="Space">{paused ? '▶' : 'II'}</button>{[1, 2, 4].map((m) => <button key={m} className={!paused && speed === BASE_SPEED * m ? 'on' : ''} onClick={() => store.setSpeed(m)}>{m}x</button>)}
-          <button title="Missile battery range rings" onClick={() => { const m = store.save.settings.samRings ?? 'AUTO'; store.save.settings.samRings = m === 'AUTO' ? 'ALL' : m === 'ALL' ? 'OFF' : 'AUTO'; store.persist(); store.notify() }}>RINGS: {store.save.settings.samRings ?? 'AUTO'}</button>
+          <button className="opt" title="Missile battery range rings" onClick={() => { const m = store.save.settings.samRings ?? 'AUTO'; store.save.settings.samRings = m === 'AUTO' ? 'ALL' : m === 'ALL' ? 'OFF' : 'AUTO'; store.persist(); store.notify() }}>RINGS: {store.save.settings.samRings ?? 'AUTO'}</button>
           <button onClick={() => setVoice(true)}>VOICE</button><button onClick={() => { if (confirm('End the shift now? You keep what you have earned.')) store.endWatch() }}>END</button></div>
       </div>
       <div className="sg-hint">TIP: {hint}{store.pick ? '   ▶ CLICK THE MAP TO CHOOSE A POINT' : ''}</div>
+      {st.objectives.length > 0 && <div className={`sg-obj ${objOpen ? '' : 'closed'}`} onClick={() => setObjOpen(!objOpen)}>
+        <div className="sg-ph">{mission ? mission.title : 'OBJECTIVES'} {objOpen ? '▾' : '▸'}</div>
+        {objOpen && st.objectives.map((o) => <div key={o.id} className={o.done ? 'g' : o.failed ? 'r' : ''}>{o.done ? '✓' : o.failed ? '✗' : '○'} {o.text}{o.id && mission?.objectives.find((x) => x.id === o.id)?.kind === 'vipEscort' ? ` (${Math.floor(((st.flags.vipEscort as number) ?? 0) / 60)}/${Math.round((mission.objectives.find((x) => x.id === o.id)!.n ?? 600) / 60)} min)` : ''}</div>)}
+      </div>}
+      {mobile && <div className="sg-mnav">{(['MAP', 'CONTACT', 'RADIO', 'SORTIES'] as const).map((k) => <button key={k} className={mob === k ? 'on' : ''} onClick={() => setMob(k)}>{k}{k === 'RADIO' && n.hos + n.em ? ' ⚠' : ''}</button>)}</div>}
 
       <div className="sg-panel sg-contact"><div className="sg-ph">CONTACT DATA</div>
         {!tr && !asset && !bat && <div><b>NO AIRCRAFT SELECTED</b><p className="dim">Click any plane on the radar. Scroll to zoom, drag to move.</p>
@@ -390,4 +425,11 @@ export function VoiceSetup({ onClose }: { onClose: () => void }) {
     {audio.elevenErr && audio.usingEleven && <p className="r">{audio.elevenErr}</p>}
     {msg && <p className="amber">{msg}</p>}
   </div>
+}
+
+export function useIsMobile() {
+  const q = '(max-width: 900px), (pointer: coarse) and (max-width: 1366px)'
+  const [m, setM] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches)
+  useEffect(() => { const mq = window.matchMedia(q); const f = () => setM(mq.matches); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f) }, [])
+  return m
 }

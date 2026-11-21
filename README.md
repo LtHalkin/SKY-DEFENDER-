@@ -18,6 +18,10 @@ npm run build      # static output in dist/
 
 ## Modes
 Arcade-style 10-minute shifts (40 sim-minutes at 4x) with progression:
+- **Campaign:** 10 missions (Operation Northern Shield) with scripted waves, objectives, 1–3 star ratings, rewards and sequential unlocks — protect targets, escort a VIP, survive night and storm shifts.
+- **Threats:** low-level raiders that hide under radar cover, raids that split into two groups near the coast, decoy drones and lost allied jets that look hostile until visually identified, VIP-hunting raids, night shifts with slower visual IDs.
+- **Ground radars & base upgrades:** buy gap-filler, mobile and long-range radars and place them at coastal sites; upgrades for faster turnarounds, bigger SAM magazines, hardened sites and fighters on CAP at the start.
+- **Mobile & touch:** pinch to zoom, drag to pan, tap to select; on phones the panels become bottom sheets with a tab bar.
 - **Home / Shop / Hangar / Records / Settings.** Progress saves automatically in the browser (`localStorage`), with export/import save codes.
 - **Shop:** 8 interceptors (Hawk → EF2000), tankers, E-3D, three SAM battery types placed at chosen sites, and upgrades (radar range, scramble speed, extra missiles, SAM reload). Items unlock by level.
 - **Combat:** hostile raids head for bases and cities. Weapons stay tight until a target is confirmed hostile (a jet's visual ID, or refusal of a warning); civil aircraft can never be engaged. Interceptors and SAM batteries fire missiles with per-type range and hit chance. Raids that reach their target cost airspace integrity and coins.

@@ -1,10 +1,11 @@
-import { ASSET_TYPES, BATTERY_TYPES } from '../sim/data/aircraftTypes'
+import { ASSET_TYPES, BATTERY_TYPES, GROUND_RADARS } from '../sim/data/aircraftTypes'
 
-export type ItemKind = 'JET' | 'SUPPORT' | 'SAM' | 'UPGRADE'
+export type ItemKind = 'JET' | 'SUPPORT' | 'SAM' | 'RADAR' | 'UPGRADE'
 export interface Item { id: string; kind: ItemKind; name: string; price: number; level: number; blurb: string }
 const jet = (id: string, price: number, level: number, blurb: string): Item => ({ id, kind: 'JET', name: ASSET_TYPES[id].name, price, level, blurb })
 const sup = (id: string, price: number, level: number, blurb: string): Item => ({ id, kind: 'SUPPORT', name: ASSET_TYPES[id].name, price, level, blurb })
 const sam = (id: string, price: number, level: number, blurb: string): Item => ({ id, kind: 'SAM', name: BATTERY_TYPES[id].name, price, level, blurb })
+const rdr = (id: string, price: number, level: number): Item => ({ id, kind: 'RADAR', name: GROUND_RADARS[id].name, price, level, blurb: GROUND_RADARS[id].blurb })
 export const ITEMS: Item[] = [
   jet('HAWK', 500, 1, 'Cheap point-defence trainer. Slow, short-legged, two short-range missiles.'),
   jet('F5E', 900, 1, 'Nimble light fighter. Good for quick looks close to home.'),
@@ -21,6 +22,7 @@ export const ITEMS: Item[] = [
   sam('STARSTREAK', 700, 1, 'Very short range (6 NM) but fast reloads and eight missiles.'),
   sam('RAPIER', 1500, 2, 'Short-range battery (12 NM), six missiles.'),
   sam('BLOODHOUND', 4000, 5, 'Long-range site (45 NM). Three missiles, slow reload.'),
+  rdr('GAPFILLER', 1800, 2), rdr('MOBILE', 2500, 3), rdr('LONGRANGE', 6000, 6),
 ]
 export interface Upgrade { id: string; name: string; blurb: string; prices: number[]; level: number }
 export const UPGRADES: Upgrade[] = [
@@ -28,6 +30,10 @@ export const UPGRADES: Upgrade[] = [
   { id: 'scramble', name: 'SCRAMBLE SPEED', blurb: 'Jets get airborne 25% faster per level.', prices: [600, 1200, 2400], level: 1 },
   { id: 'missiles', name: 'EXTRA MISSILE', blurb: '+1 missile on every fighter per level.', prices: [1000, 2000, 4000], level: 3 },
   { id: 'samReload', name: 'SAM RELOAD', blurb: 'Batteries reload 20% faster per level.', prices: [700, 1400, 2800], level: 3 },
+  { id: 'samMag', name: 'SAM MAGAZINES', blurb: '+2 missiles in every battery per level.', prices: [900, 1800, 3600], level: 3 },
+  { id: 'turnaround', name: 'FAST TURNAROUND', blurb: 'Jets refuel and rearm 30% faster per level, and every base gets an extra fuel bowser.', prices: [800, 1600, 3200], level: 2 },
+  { id: 'hardened', name: 'HARDENED SITES', blurb: 'Hostiles that get through do 25% less damage per level.', prices: [1500, 3000, 6000], level: 4 },
+  { id: 'capStart', name: 'CAP AT START', blurb: 'Your best fighter (two at level 2) starts every shift already airborne on patrol.', prices: [2500, 5000], level: 3 },
 ]
 export const ITEM_MAP: Record<string, Item> = Object.fromEntries(ITEMS.map((i) => [i.id, i]))
 export const BASES: { icao: string; name: string }[] = [
