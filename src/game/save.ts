@@ -52,11 +52,19 @@ export const MEDALS: { id: string; name: string; desc: string }[] = [
   { id: 'collector', name: 'COLLECTOR', desc: 'Own 8 aircraft' },
 ]
 const CODES: Record<string, number> = { SKYMILLION: 1_000_000 }
-/** One-time redeemable coin codes. Returns coins granted or an error message. */
-export function redeem(s: Save, code: string): number | string {
-  const c = code.trim().toUpperCase(); const n = CODES[c]
-  if (!n) return 'Unknown code'
-  if ((s.redeemed ?? []).includes(c)) return 'Code already used on this save'
-  s.redeemed = [...(s.redeemed ?? []), c]; s.coins += n; return n
+export const MAX_LEVEL = 50
+const xpForLevel = (lvl: number) => { let x = 0; for (let l = 1; l < lvl; l++) x += xpFor(l); return x }
+/** One-time redeemable codes. Returns a description of what was granted, or an error. */
+export function redeem(s: Save, code: string): { ok: true; text: string } | { ok: false; text: string } {
+  const c = code.trim().toUpperCase()
+  if ((s.redeemed ?? []).includes(c)) return { ok: false, text: 'Code already used on this save' }
+  if (CODES[c]) { s.coins += CODES[c]; s.redeemed = [...(s.redeemed ?? []), c]; return { ok: true, text: `+${CODES[c].toLocaleString()} Skycoins added` } }
+  if (c === 'SKYMAX') {
+    s.xp = Math.max(s.xp, xpForLevel(MAX_LEVEL))
+    s.upgrades = { radar: 3, scramble: 3, missiles: 3, samReload: 3 }
+    s.redeemed = [...(s.redeemed ?? []), c]
+    return { ok: true, text: `Promoted to level ${MAX_LEVEL} — everything unlocked, all upgrades maxed` }
+  }
+  return { ok: false, text: 'Unknown code' }
 }
 export const sellPrice = (typeId: string) => Math.round((ITEM_MAP[typeId]?.price ?? 0) * 0.5)

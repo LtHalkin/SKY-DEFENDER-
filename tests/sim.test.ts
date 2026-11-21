@@ -242,8 +242,10 @@ describe('save', () => {
   it('redeem codes grant coins once', async () => {
     const { freshSave, redeem } = await import('../src/game/save')
     const s = freshSave(); const c0 = s.coins
-    expect(redeem(s, 'skymillion')).toBe(1_000_000); expect(s.coins).toBe(c0 + 1_000_000)
-    expect(redeem(s, 'SKYMILLION')).toMatch(/already/); expect(redeem(s, 'NOPE')).toMatch(/Unknown/)
+    expect(redeem(s, 'skymillion').ok).toBe(true); expect(s.coins).toBe(c0 + 1_000_000)
+    expect(redeem(s, 'SKYMILLION').text).toMatch(/already/); expect(redeem(s, 'NOPE').text).toMatch(/Unknown/)
+    const { levelOf } = await import('../src/game/save')
+    expect(redeem(s, 'skymax').ok).toBe(true); expect(levelOf(s.xp).level).toBe(50); expect(s.upgrades.missiles).toBe(3)
   })
   it('an ATC check that confirms the flight resolves a missing-plan incident', () => {
     const e = new SimEngine(defaultConfig({ incidents: false, intel: false, radarFaults: false, seed: 61 })); e.warm(90)
