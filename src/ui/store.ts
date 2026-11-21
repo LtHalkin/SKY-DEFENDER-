@@ -9,7 +9,7 @@ export type Screen = 'HOME' | 'SHOP' | 'HANGAR' | 'STATS' | 'SETTINGS' | 'GAME' 
 export interface View { lat: number; lon: number; rangeNm: number }
 export type PickMode = null | { kind: 'point'; label: string; cb: (p: { lat: number; lon: number }) => void }
 export interface Fx { kind: string; lat: number; lon: number; t0: number; text?: string; n?: number }
-export interface Popup { id: string; kind: 'hostile' | 'refused' | 'complied'; trackId: string; t0: number }
+export interface Popup { id: string; kind: 'hostile' | 'refused' | 'complied' | 'lowfuel'; trackId: string; t0: number }
 export interface Reward { base: number; airspaceBonus: number; gradeBonus: number; total: number; xp: number; levelBefore: number; levelAfter: number; newMedals: string[] }
 export const SHIFT_SEC = 2400 // sim seconds; at normal speed (4x) this is a 10-minute shift
 export const BASE_SPEED = 4
@@ -36,7 +36,7 @@ class Store {
   get st(): GameState | null { return this.engine?.st ?? null }
   setScreen(s: Screen) { this.screen = s; this.notify() }
   persist() { writeSave(this.save) }
-  applyAudio() { const s = this.save.settings; audio.volume = s.volume; audio.voiceOn = s.voice; audio.sfxOn = s.sfx; audio.eleven.key = s.elevenKey ?? '' }
+  applyAudio() { const s = this.save.settings; audio.volume = s.volume; audio.voiceOn = s.voice; audio.sfxOn = s.sfx; audio.eleven.key = s.elevenOn !== false ? s.elevenKey ?? '' : '' }
   get level() { return levelOf(this.save.xp).level }
 
   startShift() {
@@ -88,6 +88,7 @@ class Store {
         if (ev.kind === 'launch') audio.launch(); else if (ev.kind === 'splash') audio.boom(); else if (ev.kind === 'breach') audio.alarm(); else if (ev.kind === 'coins' && (ev.n ?? 0) > 0) audio.coin()
       } else if (ev.type === 'ui') {
         const [k, id] = ev.name.split(':')
+        if (k === 'lowfuel') { this.popups = this.popups.filter((p) => p.trackId !== id); this.popups.push({ id: ev.name + st.t, kind: 'lowfuel', trackId: id, t0: now }); audio.warble() }
         if (k === 'hostile' || k === 'refused' || k === 'complied') { this.popups = this.popups.filter((p) => p.trackId !== id); this.popups.push({ id: ev.name + st.t, kind: k, trackId: id, t0: now }); if (k !== 'complied') audio.alarm() }
       }
     }

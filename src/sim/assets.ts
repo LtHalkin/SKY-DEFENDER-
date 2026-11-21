@@ -78,7 +78,7 @@ export function launchAsset(st: GameState, a: Asset, opId: string | null, expedi
   say(st, { channel: 'AIRFIELD', from: af.name.toUpperCase().replace('RAF ', ''), to: 'OPS', text: `${rt(a.callsign)} — ${ASSET_TYPES[a.typeId].short} state ${a.readiness}, engines starting. Estimated airborne ${Math.round((a.launchAt - st.t) / 60)} minutes.`, voice: 'AIRFIELD', sev: 'ROUTINE', ref: a.id, refKind: 'asset' })
   return null
 }
-function spawnAssetAircraft(st: GameState, a: Asset): Aircraft {
+export function spawnAssetAircraft(st: GameState, a: Asset): Aircraft {
   const t = ASSET_TYPES[a.typeId]
   const af = st.airfields[a.locationId!]
   const ap = AIRPORT_MAP[af.icao]
@@ -140,6 +140,7 @@ export function stepAssets(st: GameState, dt: number) {
       const burn = burnRate(a) * dt
       a.fuelKg = Math.max(0, a.fuelKg - burn)
       a.flightHrs += dt / 3600; a.serviceHrs -= dt / 3600
+      if (t.role === 'FIGHTER' && a.fuelKg < t.fuelCap * 0.35 && !a.fuelWarned && a.status === 'AIRBORNE') { a.fuelWarned = true; st.events.push({ type: 'ui', name: 'lowfuel:' + a.id }) }
       if (a.fuelKg < t.fuelCap * 0.2 && !a.lowWarned && a.status === 'AIRBORNE') { a.lowWarned = true; say(st, { channel: 'PILOT', from: a.callsign, to: 'OPS', text: `${rt(a.callsign)}, fuel state ${Math.round(a.fuelKg / 100) / 10} tonnes, approaching bingo.`, voice: 'PILOT', sev: 'PRIORITY', ref: a.id, refKind: 'asset' }) }
       const refuelling = !!a.opId && st.ops[a.opId]?.type === 'REFUEL' ? true : Object.values(st.ops).some((o) => o.type === 'REFUEL' && (o.status === 'ACTIVE') && o.assets.includes(a.id) && o.stage >= 2 && o.stage <= 5)
       if (a.status === 'AIRBORNE' && !refuelling && a.fuelKg <= bingoFuel(st, a)) {
@@ -187,7 +188,7 @@ function processAirfield(st: GameState, af: Airfield) {
         const take = Math.min(need, af.fuelKg)
         af.fuelKg -= take; a.fuelKg += take
         a.missiles = a.maxMissiles
-        a.lowWarned = false; a.bingoWarned = false
+        a.lowWarned = false; a.bingoWarned = false; a.fuelWarned = false
         if (a.serviceHrs <= 0) { a.status = 'MAINT'; a.defect = 'Scheduled servicing'; a.busyUntil = 0; continue }
         if (a.fuelKg < t.fuelCap * 0.55 && af.fuelKg <= 1) { a.status = 'READY'; a.defect = 'Low fuel – airfield stocks exhausted'; say(st, { channel: 'AIRFIELD', from: af.name, to: 'OPS', text: `${a.callsign} turnaround complete but only ${Math.round((a.fuelKg / t.fuelCap) * 100)}% fuel — airfield stocks exhausted.`, voice: 'AIRFIELD', sev: 'PRIORITY', ref: a.id, refKind: 'asset' }); continue }
         a.status = 'READY'; if (a.defect === 'Low fuel – airfield stocks exhausted') a.defect = null
@@ -223,3 +224,18 @@ export function recoverAsset(st: GameState, a: Asset, icao: string) {
   void t
 }
 export const headingTo = bearingDeg
+
+/** Fighter speed setting: ECO saves fuel, CRUISE is the type's normal speed, MAX burns fuel fast. */
+export function modeSpeed(a: Asset) {
+  const t = ASSET_TYPES[a.typeId], m = a.speedMode ?? 'CRUISE'
+  return m === 'MAX' ? Math.round(t.maxKt * 0.95) : m === 'ECO' ? Math.round(t.cruiseKt * 0.78) : t.cruiseKt
+}
+export function applySpeedModes(st: GameState) {
+  for (const a of Object.values(st.assets)) {
+    if (!a.ac || ASSET_TYPES[a.typeId].role !== 'FIGHTER') continue
+    const nav = a.ac.nav, t = ASSET_TYPES[a.typeId], v = modeSpeed(a)
+    if (nav.mode === 'TRAIL') continue
+    if (nav.mode === 'INTERCEPT' && nav.targetEntity && st.aircraft[nav.targetEntity] && distNm(a.ac, st.aircraft[nav.targetEntity]) < 4) continue // matching speed for the join
+    nav.speedOverride = nav.mode === 'ORBIT' || nav.mode === 'HOLD' ? Math.min(v, Math.round(t.cruiseKt * 0.8)) : v
+  }
+}

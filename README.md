@@ -21,7 +21,10 @@ Arcade-style 10-minute shifts (40 sim-minutes at 4x) with progression:
 - **Home / Shop / Hangar / Records / Settings.** Progress saves automatically in the browser (`localStorage`), with export/import save codes.
 - **Shop:** 8 interceptors (Hawk → EF2000), tankers, E-3D, three SAM battery types placed at chosen sites, and upgrades (radar range, scramble speed, extra missiles, SAM reload). Items unlock by level.
 - **Combat:** hostile raids head for bases and cities. Weapons stay tight until a target is confirmed hostile (a jet's visual ID, or refusal of a warning); civil aircraft can never be engaged. Interceptors and SAM batteries fire missiles with per-type range and hit chance. Raids that reach their target cost airspace integrity and coins.
-- Optional ElevenLabs radio voices: VOICE button, paste your own API key (stored only in your browser).
+- Tankers launch straight onto refuelling orbits and stay airborne all shift; after refuelling a jet they return to their orbit.
+- Fighter speed settings: ECO (slower, saves fuel), CRUISE (the shop speed), MAX (fastest, burns fuel). A low-fuel popup at 35% offers SEND TANKER / ECO / RTB.
+- Map declutter: radar sweep animation off by default; SAM batteries show one marker per site, with range rings only when a hostile is near (AUTO / ALL / OFF).
+- Optional ElevenLabs radio voices: VOICE button, paste your own API key (stored only in your browser). When on, every spoken line uses ElevenLabs (fetched ahead, retried when busy, never falls back to the browser voice); it can be switched off without deleting the key.
 
 ## Notes
 - Aircraft register: 440+ generated records; airways/fixes are invented but plausible, not real AIP data.

@@ -1,7 +1,8 @@
 import { Rng } from './rng'
 import type { Category, GameConfig, GameState, OpType } from './types'
 import { initWeather, tickWeather } from './weather'
-import { initAirfields, recoverAsset, stepAssets } from './assets'
+import { applySpeedModes, initAirfields, recoverAsset, spawnAssetAircraft, stepAssets } from './assets'
+import { ASSET_TYPES } from './data/aircraftTypes'
 import { makeRadars, maintainTracks, stepRadars } from './radar'
 import { stepSensors } from './sensors'
 import { stepAircraft } from './aircraft'
@@ -26,7 +27,7 @@ export type Command =
   | { c: 'watch'; trackId: string; on: boolean }
   | { c: 'spawn'; event: string }
   | { c: 'closeAirfield'; icao: string; open: boolean }
-  | { c: 'warn'; trackId: string } | { c: 'samFire'; batteryId: string; trackId: string } | { c: 'samAuto'; batteryId: string; on: boolean } | { c: 'raid'; size: number }
+  | { c: 'warn'; trackId: string } | { c: 'samFire'; batteryId: string; trackId: string } | { c: 'samAuto'; batteryId: string; on: boolean } | { c: 'raid'; size: number } | { c: 'speedMode'; assetId: string; mode: 'ECO' | 'CRUISE' | 'MAX' }
 
 export const defaultConfig = (over: Partial<GameConfig> = {}): GameConfig => ({
   mode: 'COMBAT', seed: 1998, startHour: 6, traffic: 1, weather: 'CLEAR', complexity: 0.6, radarOff: [], incidents: true, tension0: 0.03, prepSeconds: 0, maxAssetsDown: 0, growth: true,
@@ -60,7 +61,8 @@ export class SimEngine {
     for (const tr of Object.values(this.st.tracks)) { tr.created = this.st.t; tr.unknownSince = tr.unknownSince === null ? null : this.st.t }
     this.st.score = newLedger(); this.st.incidents = []; this.st.pending = []
     // scenario scripting starts once the picture has formed, so opening incidents are not wiped
-    setupScenario(this.st) }
+    setupScenario(this.st)
+    if (this.st.cfg.hostiles) startTankers(this.st) }
 }
 
 export function dispatch(st: GameState, cmd: Command): string | null {
@@ -82,6 +84,7 @@ export function dispatch(st: GameState, cmd: Command): string | null {
     case 'samFire': return samFire(st, cmd.batteryId, cmd.trackId)
     case 'samAuto': { const b = st.batteries.find((x) => x.id === cmd.batteryId); if (b) b.auto = cmd.on; return null }
     case 'raid': spawnRaid(st, cmd.size); return null
+    case 'speedMode': { const a = st.assets[cmd.assetId]; if (a) a.speedMode = cmd.mode; return null }
     case 'closeAirfield': { const af = st.airfields[cmd.icao]; if (af) { af.open = cmd.open; af.closedReason = cmd.open ? '' : 'Closed by operations' } return null }
   }
 }
@@ -118,6 +121,7 @@ export function tick(st: GameState) {
   }
   stepAssets(st, dt)
   stepOps(st, dt)
+  applySpeedModes(st)
   stepCombat(st, dt)
   if (st.tick % 5 === 0) tickWeather(st, 5)
   // --- surveillance
@@ -145,4 +149,19 @@ export function tick(st: GameState) {
     if (st.cfg.intel && st.t >= st.nextIntel && st.cfg.incidents) { spawnEvent(st, 'noise'); st.nextIntel = st.t + st.rng.range(900, 2400) / (0.5 + st.tension) }
     evaluateObjectives(st)
   }
+}
+
+/** Air-to-air refuelling areas where tankers hold for the whole shift. */
+export const AARA = [{ lat: 55.9, lon: -0.6 }, { lat: 53.7, lon: -0.4 }, { lat: 54.5, lon: -4.6 }, { lat: 52.3, lon: -3.0 }, { lat: 57.6, lon: -1.2 }]
+export function startTankers(st: GameState) {
+  let i = 0
+  for (const a of Object.values(st.assets)) {
+    const t = ASSET_TYPES[a.typeId]
+    if (t.role !== 'TANKER' || a.status !== 'READY' || !a.locationId) continue
+    const p = AARA[i++ % AARA.length]
+    const ac = spawnAssetAircraft(st, a)
+    ac.lat = p.lat + 0.1; ac.lon = p.lon; ac.alt = t.patrolAlt; ac.tgtAlt = t.patrolAlt; ac.gs = t.cruiseKt * 0.8; ac.phase = 'ENROUTE'
+    createOp(st, { type: 'PATROL', assetId: a.id, point: p, radius: 15, durationMin: 9999 })
+  }
+  st.events = st.events.filter((e) => e.type !== 'msg')
 }

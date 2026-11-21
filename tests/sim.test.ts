@@ -256,3 +256,38 @@ describe('save', () => {
     expect(inc!.status).toBe('RESOLVED')
   })
 })
+
+describe('tankers, speed modes, fuel warnings', () => {
+  const fleet = [{ id: 'F', typeId: 'F16', base: 'EGXE' }, { id: 'T', typeId: 'VC10', base: 'EGVN' }]
+  const mkG = () => { const e = new SimEngine(defaultConfig({ incidents: false, intel: false, radarFaults: false, seed: 91, fleet, batteries: [], hostiles: true, level: 1 })); e.warm(60); e.st.flags.nextRaid = 1e12; return e }
+  it('tankers are airborne from the start and stay up for the whole shift', () => {
+    const e = mkG()
+    expect(e.st.assets.T.ac).not.toBeNull()
+    e.step(2400)
+    expect(e.st.assets.T.ac).not.toBeNull()
+    expect(e.st.ops[e.st.assets.T.opId!].type).toBe('PATROL')
+  })
+  it('refuelling uses the airborne tanker, which then returns to its orbit', () => {
+    const e = mkG()
+    e.dispatch({ c: 'op', spec: { type: 'PATROL', assetId: 'F', point: { lat: 54.5, lon: -1 }, durationMin: 120, expedite: true } })
+    e.step(600); e.st.assets.F.fuelKg = 2000
+    expect(e.dispatch({ c: 'op', spec: { type: 'REFUEL', assetId: 'F' } })).toBeNull()
+    const op = Object.values(e.st.ops).find((o) => o.type === 'REFUEL')!
+    let g = 0; while (op.status === 'ACTIVE' && g++ < 4000) e.step(1)
+    expect(op.status).toBe('COMPLETE'); expect(e.st.assets.F.fuelKg).toBeGreaterThan(5000)
+    expect(e.st.assets.T.ac).not.toBeNull(); expect(e.st.ops[e.st.assets.T.opId!].type).toBe('PATROL')
+  })
+  it('speed modes change speed and fuel burn; low fuel raises a warning', () => {
+    const run = (mode: 'ECO' | 'CRUISE' | 'MAX') => {
+      const e = mkG(); e.dispatch({ c: 'speedMode', assetId: 'F', mode })
+      e.dispatch({ c: 'op', spec: { type: 'PATROL', assetId: 'F', point: { lat: 58, lon: 2 }, durationMin: 60, expedite: true } })
+      e.step(900); const a = e.st.assets.F; return { gs: a.ac!.gs, fuel: a.fuelKg, e }
+    }
+    const eco = run('ECO'), cru = run('CRUISE'), max = run('MAX')
+    expect(eco.gs).toBeLessThan(cru.gs); expect(max.gs).toBeGreaterThan(cru.gs)
+    expect(eco.fuel).toBeGreaterThan(cru.fuel); expect(max.fuel).toBeLessThan(cru.fuel)
+    const e = max.e; let warned = false; e.st.events.length = 0; e.st.assets.F.fuelKg = 5800 * 0.36
+    for (let i = 0; i < 3000 && !warned; i++) { e.step(1); warned = e.st.events.some((x) => x.type === 'ui' && x.name === 'lowfuel:F'); if (!warned) e.st.events.length = 0 }
+    expect(warned).toBe(true)
+  })
+})

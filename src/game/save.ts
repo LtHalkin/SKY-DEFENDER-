@@ -6,7 +6,7 @@ export interface Save {
   v: 2; coins: number; xp: number
   fleet: Owned[]; batteries: OwnedBattery[]; upgrades: Record<string, number>
   stats: { shifts: number; splashes: number; ids: number; emergencies: number; best: number; breaches: number; coinsEarned: number; bestGrade: string; complied: number }
-  settings: { volume: number; voice: boolean; sfx: boolean; elevenKey: string }
+  settings: { volume: number; voice: boolean; sfx: boolean; elevenKey: string; elevenOn: boolean; sweep: boolean; samRings: 'AUTO' | 'ALL' | 'OFF' }
   medals: string[]; tutorial: boolean; redeemed?: string[]; lastShift?: { grade: string; score: number; coins: number }
 }
 const KEY = 'sd.save.v2'
@@ -17,7 +17,7 @@ export const freshSave = (): Save => ({
   fleet: [{ id: newId('J'), typeId: 'F5E', base: 'EGXE' }, { id: newId('J'), typeId: 'HAWK', base: 'EGQL' }, { id: newId('J'), typeId: 'VC10', base: 'EGVN' }],
   batteries: [{ id: newId('S'), typeId: 'STARSTREAK', site: 'LONDON' }], upgrades: {},
   stats: { shifts: 0, splashes: 0, ids: 0, emergencies: 0, best: 0, breaches: 0, coinsEarned: 0, bestGrade: '-', complied: 0 },
-  settings: { volume: 0.7, voice: true, sfx: true, elevenKey: '' }, medals: [], tutorial: false,
+  settings: { volume: 0.7, voice: true, sfx: true, elevenKey: '', elevenOn: true, sweep: false, samRings: 'AUTO' }, medals: [], tutorial: false,
 })
 export function loadSave(): Save {
   try {

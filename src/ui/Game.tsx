@@ -41,7 +41,7 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number) {
   for (const line of COAST) line.forEach((p, i) => (i ? ctx.lineTo(P.x(p[0]), P.y(p[1])) : ctx.moveTo(P.x(p[0]), P.y(p[1]))))
   ctx.stroke()
   // radar sweeps (operational ground stations)
-  for (const r of s.radars) {
+  if (store.save.settings.sweep) for (const r of s.radars) {
     if (r.airborne || r.status === 'OFFLINE' || r.status === 'MAINTENANCE') continue
     const x = P.x(r.lon), y = P.y(r.lat), R = r.primaryRange * P.pxPerNm(r.lat) * (r.status === 'DEGRADED' ? 0.55 : 1)
     const g = ctx.createRadialGradient(x, y, 0, x, y, R); g.addColorStop(0, 'rgba(60,255,120,0.10)'); g.addColorStop(1, 'rgba(60,255,120,0)')
@@ -61,13 +61,24 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number) {
     ctx.stroke(); ctx.fillStyle = a.kind === 'MIL' ? '#8dffb0' : '#cfe3ff'; ctx.fillText((a.kind === 'MIL' ? a.name.replace('RAF ', '') + ' AB' : a.city).toUpperCase(), x + 10 * k, y + 4)
   }
   // SAM batteries
-  for (const b of s.batteries) {
-    const x = P.x(b.lon), y = P.y(b.lat), R = b.range * P.pxPerNm(b.lat), sel = store.sel.battery === b.id
-    ctx.setLineDash([5, 5]); ctx.strokeStyle = b.missiles > 0 ? (b.auto ? 'rgba(255,80,80,0.7)' : 'rgba(80,200,255,0.55)') : 'rgba(120,120,120,0.5)'; ctx.lineWidth = sel ? 2 : 1
-    ctx.beginPath(); ctx.arc(x, y, R, 0, 7); ctx.stroke(); ctx.setLineDash([])
-    ctx.fillStyle = b.missiles > 0 ? '#4db8ff' : '#777'; ctx.beginPath(); ctx.moveTo(x, y - 8 * k); ctx.lineTo(x + 7 * k, y + 6 * k); ctx.lineTo(x - 7 * k, y + 6 * k); ctx.closePath(); ctx.fill()
-    ctx.fillText(`${b.name} ${b.missiles}/${b.maxMissiles}${b.auto ? ' AUTO' : ''}`, x + 10 * k, y + 16 * k)
-    hits.push({ id: '', battery: b.id, x, y })
+  // SAM batteries: one marker per site; rings only when relevant (or as set in settings)
+  const ringMode = store.save.settings.samRings ?? 'AUTO'
+  const hostiles = Object.values(s.tracks).filter((t) => !t.dropped && t.hostile)
+  const sites = new Map<string, typeof s.batteries>()
+  for (const b of s.batteries) sites.set(b.site, [...(sites.get(b.site) ?? []), b])
+  for (const group of sites.values()) {
+    const b0 = group[0], x = P.x(b0.lon), y = P.y(b0.lat)
+    const R = Math.max(...group.map((b) => b.range)) * P.pxPerNm(b0.lat)
+    const sel = group.some((b) => b.id === store.sel.battery)
+    const ammo = group.reduce((n, b) => n + b.missiles, 0), max = group.reduce((n, b) => n + b.maxMissiles, 0), auto = group.some((b) => b.auto)
+    const threat = hostiles.some((t) => distNm(t, b0) < Math.max(...group.map((b) => b.range)) + 40)
+    if (ringMode === 'ALL' || sel || (ringMode === 'AUTO' && threat)) {
+      ctx.setLineDash([5, 5]); ctx.strokeStyle = ammo > 0 ? (auto ? 'rgba(255,80,80,0.7)' : 'rgba(80,200,255,0.55)') : 'rgba(120,120,120,0.5)'; ctx.lineWidth = sel ? 2 : 1
+      ctx.beginPath(); ctx.arc(x, y, R, 0, 7); ctx.stroke(); ctx.setLineDash([])
+    }
+    ctx.fillStyle = ammo > 0 ? (auto ? '#ff6b6b' : '#4db8ff') : '#777'; ctx.beginPath(); ctx.moveTo(x, y - 7 * k); ctx.lineTo(x + 6 * k, y + 5 * k); ctx.lineTo(x - 6 * k, y + 5 * k); ctx.closePath(); ctx.fill()
+    if (sel || threat || store.view.rangeNm < 220) ctx.fillText(`SAM${group.length > 1 ? '×' + group.length : ''} ${ammo}/${max}`, x + 9 * k, y + 14 * k)
+    hits.push({ id: '', battery: (group.find((b) => b.id === store.sel.battery) ?? b0).id, x, y })
   }
   // patrols
   for (const op of Object.values(s.ops)) if (op.status === 'ACTIVE' && op.point && op.type === 'PATROL') { ctx.setLineDash([6, 5]); ctx.strokeStyle = 'rgba(57,255,122,0.6)'; ctx.beginPath(); ctx.arc(P.x(op.point.lon), P.y(op.point.lat), (op.radius ?? 18) * P.pxPerNm(op.point.lat), 0, 7); ctx.stroke(); ctx.setLineDash([]) }
@@ -167,7 +178,7 @@ export function Game() {
 
   // popups: combat popups first, then incident popups
   const cp = store.popups.find((p) => !dismissed.includes(p.id) && (p.kind !== 'complied' || performance.now() - p.t0 < 6000))
-  const ctr = cp ? st.tracks[cp.trackId] : undefined
+  const ctr = cp && cp.kind !== 'lowfuel' ? st.tracks[cp.trackId] : undefined
   const cent = ctr ? st.aircraft[ctr.entityId] : undefined
   const ipop = !cp ? st.incidents.find((i) => i.closed === null && !i.acked && i.kind !== 'RADAR_FAULT' && i.kind !== 'SAR' && !dismissed.includes(i.id)) : undefined
   const ptr = ipop?.entityId ? st.tracks[st.trackByEntity[ipop.entityId]] : undefined
@@ -209,6 +220,7 @@ export function Game() {
         <div className="sg-box"><small>AIRSPACE HELD</small><b className={st.airspace > 60 ? 'g' : st.airspace > 30 ? 'o' : 'r'}>{st.airspace}%</b><i className="air" style={{ width: st.airspace + '%' }} /></div>
         <div className="sg-box"><small>SPLASHES / GRADE</small><b>{st.splashes} · {sc.grade}</b></div>
         <div className="sg-ctl"><button onClick={() => store.togglePause()} className={paused ? 'on' : ''} title="Space">{paused ? '▶' : 'II'}</button>{[1, 2, 4].map((m) => <button key={m} className={!paused && speed === BASE_SPEED * m ? 'on' : ''} onClick={() => store.setSpeed(m)}>{m}x</button>)}
+          <button title="Missile battery range rings" onClick={() => { const m = store.save.settings.samRings ?? 'AUTO'; store.save.settings.samRings = m === 'AUTO' ? 'ALL' : m === 'ALL' ? 'OFF' : 'AUTO'; store.persist(); store.notify() }}>RINGS: {store.save.settings.samRings ?? 'AUTO'}</button>
           <button onClick={() => setVoice(true)}>VOICE</button><button onClick={() => { if (confirm('End the shift now? You keep what you have earned.')) store.endWatch() }}>END</button></div>
       </div>
       <div className="sg-hint">TIP: {hint}{store.pick ? '   ▶ CLICK THE MAP TO CHOOSE A POINT' : ''}</div>
@@ -242,12 +254,14 @@ export function Game() {
           <div className="kv"><span>STATUS</span><b>{asset.status}{asset.status === 'LAUNCHING' && asset.launchAt ? ` (${Math.ceil((asset.launchAt - st.t) / BASE_SPEED)}s)` : ''}</b></div><div className="kv"><span>TASK</span><b>{op ? `${opLabel(st, op)} · ${op.stages[op.stage]}` : 'NONE'}</b></div>
           <div className="kv"><span>FUEL</span><b>{Math.round((asset.fuelKg / t.fuelCap) * 100)}%</b></div>{t.missiles > 0 && <div className="kv"><span>MISSILES</span><b>{asset.missiles} / {asset.maxMissiles} (range {t.mRange} NM)</b></div>}
           <div className="kv"><span>SPEED</span><b>{asset.ac ? `${Math.round(asset.ac.gs)} KT FL${Math.round(asset.ac.alt / 100)}` : `max ${t.maxKt} KT`}</b></div><div className="kv"><span>HOME BASE</span><b>{st.airfields[asset.baseId]?.name}</b></div>
+          {t.role === 'FIGHTER' && <><div className="sg-sub">SPEED</div><div className="sg-speed">{(['MAX', 'CRUISE', 'ECO'] as const).map((m) => <button key={m} className={(asset.speedMode ?? 'CRUISE') === m ? 'on' : ''} onClick={() => store.dispatch({ c: 'speedMode', assetId: asset.id, mode: m })}><b>{m === 'MAX' ? 'MAX (BUSTER)' : m}</b><small>{m === 'MAX' ? `${Math.round(t.maxKt * 0.95)} KT · burns fast` : m === 'ECO' ? `${Math.round(t.cruiseKt * 0.78)} KT · saves fuel` : `${t.cruiseKt} KT · normal`}</small></button>)}</div></>}
           <div className="sg-btns">
             <button onClick={() => { store.pick = { kind: 'point', label: 'PATROL', cb: (p) => order({ type: 'PATROL', assetId: asset.id, point: p, durationMin: 40 }) }; store.notify() }}>PATROL A POINT…</button>
             <button disabled={!asset.ac} onClick={() => order({ type: 'PATROL', assetId: asset.id, point: { lat: asset.ac!.lat, lon: asset.ac!.lon }, radius: 8, durationMin: 30 })}>HOLD HERE</button>
             <button disabled={!asset.ac || t.role !== 'FIGHTER'} onClick={() => order({ type: 'REFUEL', assetId: asset.id })}>REFUEL (TANKER)</button>
             <button disabled={!asset.ac} onClick={() => order({ type: 'RETURN', assetId: asset.id })}>RETURN TO BASE</button>
           </div></div> })()}
+        {bat && st.batteries.filter((b) => b.site === bat.site).length > 1 && <div className="sg-sub">SITE <select value={bat.id} onChange={(e) => { store.sel = { battery: e.target.value }; store.notify() }}>{st.batteries.filter((b) => b.site === bat.site).map((b) => <option key={b.id} value={b.id}>{b.name} {b.missiles}/{b.maxMissiles}</option>)}</select></div>}
         {bat && <div>
           <h2 style={{ color: '#4db8ff' }}>{bat.name}</h2><div className="dim">YOUR MISSILE BATTERY</div>
           <div className="kv"><span>MISSILES</span><b>{bat.missiles} / {bat.maxMissiles}</b></div><div className="kv"><span>RANGE</span><b>{bat.range} NM</b></div><div className="kv"><span>STATUS</span><b>{bat.missiles <= 0 ? 'EMPTY' : st.t < bat.readyAt ? `RELOADING ${Math.ceil((bat.readyAt - st.t) / BASE_SPEED)}s` : 'READY'}</b></div>
@@ -267,11 +281,18 @@ export function Game() {
         </div>}
       </div>
       <div className="sg-panel sg-sorties"><div className="sg-ph">SORTIES</div>
-        {Object.values(st.assets).filter((a) => a.ac || a.status === 'LAUNCHING').map((a) => { const t = ASSET_TYPES[a.typeId]; const op = a.opId ? st.ops[a.opId] : undefined; return <div key={a.id} className="sg-row" onClick={() => { store.sel = { asset: a.id }; if (a.ac) store.centreOn(a.ac); store.notify() }}><b className="g">{a.callsign}</b> {t.short} // {op ? `${opLabel(st, op)} · ${op.stages[op.stage]}` : a.status} // F{Math.round((a.fuelKg / t.fuelCap) * 100)}%{t.missiles ? ` M${a.missiles}` : ''}</div> })}
+        {Object.values(st.assets).filter((a) => a.ac || a.status === 'LAUNCHING').map((a) => { const t = ASSET_TYPES[a.typeId]; const op = a.opId ? st.ops[a.opId] : undefined; return <div key={a.id} className="sg-row" onClick={() => { store.sel = { asset: a.id }; if (a.ac) store.centreOn(a.ac); store.notify() }}><b className="g">{a.callsign}</b> {t.short} // {op ? `${opLabel(st, op)} · ${op.stages[op.stage]}` : a.status} // <span className={a.fuelKg / t.fuelCap < 0.25 ? 'r' : a.fuelKg / t.fuelCap < 0.35 ? 'o' : ''}>F{Math.round((a.fuelKg / t.fuelCap) * 100)}%</span>{t.missiles ? ` M${a.missiles}` : ''}{t.role === 'FIGHTER' ? ` · ${a.speedMode ?? 'CRUISE'}` : ''}</div> })}
         {!Object.values(st.assets).some((a) => a.ac || a.status === 'LAUNCHING') && <div className="dim">Nothing airborne. {fighters.filter((a) => a.status === 'READY').length} jets ready.</div>}</div>
       {last && <div className="sg-bar"><b>{last.from}:</b> {last.text}</div>}
 
-      {cp && ctr && <div className={`sg-popup ${cp.kind === 'complied' ? 'ok' : 'hot'}`}>
+      {cp && cp.kind === 'lowfuel' && st.assets[cp.trackId] && (() => { const a = st.assets[cp.trackId]; const t = ASSET_TYPES[a.typeId]; const tankers = Object.values(st.assets).filter((x) => ASSET_TYPES[x.typeId].role === 'TANKER' && x.ac); return <div className="sg-popup em">
+        <h3>⛽ {a.callsign} LOW FUEL — {Math.round((a.fuelKg / t.fuelCap) * 100)}%</h3>
+        <p>{a.callsign} is running low{a.opId && st.ops[a.opId] ? ` while on ${opLabel(st, st.ops[a.opId])}` : ''}. {tankers.length ? 'A tanker is airborne and can top it up so it stays on task.' : 'No tanker is airborne — buy one in the shop to refuel in the air.'}</p>
+        <div className="sg-btns">{tankers.length > 0 && <button className="g" onClick={() => { say(store.dispatch({ c: 'op', spec: { type: 'REFUEL', assetId: a.id } })); dismiss(cp.id) }}>SEND TANKER</button>}
+          <button onClick={() => { store.dispatch({ c: 'speedMode', assetId: a.id, mode: 'ECO' }); dismiss(cp.id) }}>SWITCH TO ECO</button>
+          <button onClick={() => { say(store.dispatch({ c: 'op', spec: { type: 'RETURN', assetId: a.id } })); dismiss(cp.id) }}>RETURN TO BASE</button>
+          <button onClick={() => { store.sel = { asset: a.id }; if (a.ac) store.centreOn(a.ac); dismiss(cp.id) }}>SHOW ME</button></div></div> })()}
+      {cp && cp.kind !== 'lowfuel' && ctr && <div className={`sg-popup ${cp.kind === 'complied' ? 'ok' : 'hot'}`}>
         <h3>{cp.kind === 'hostile' ? '! HOSTILE CONFIRMED' : cp.kind === 'refused' ? '! TARGET REFUSES TO COMPLY' : '✓ INTRUDER COMPLYING'}</h3>
         <p>{cp.kind === 'complied' ? `${label(st, ctr)} is turning away. Well done — no shots needed.` : `${cent?.typeName ?? 'The aircraft'}${cent?.raid ? ` is heading for ${cent.raid.name}` : ''}. Weapons are free on your authority.`}</p>
         <div className="sg-btns">{cp.kind !== 'complied' && cent && <>
@@ -295,18 +316,21 @@ export function Game() {
 export function VoiceSetup({ onClose }: { onClose: () => void }) {
   const [key, setKey] = useState(store.save.settings.elevenKey ?? '')
   const [msg, setMsg] = useState('')
-  const apply = (k: string) => { store.save.settings.elevenKey = k.trim(); store.persist(); store.applyAudio() }
+  const apply = (k: string) => { store.save.settings.elevenKey = k.trim(); if (k.trim()) store.save.settings.elevenOn = true; store.persist(); store.applyAudio() }
+  const on = store.save.settings.elevenOn !== false
   const test = () => {
     apply(key); audio.unlock(); audio.stopAll()
     audio.speak({ id: 0, t: 0, channel: 'PILOT', from: 'TEST', to: 'OPS', text: 'Skywatch, Wolf one five, tally one bandit, he is ignoring all calls. Request permission to engage.', voice: 'PILOT', sev: 'URGENT', speak: true })
-    setMsg('Playing…'); setTimeout(() => setMsg(audio.elevenErr ? '✗ ' + audio.elevenErr + ' — using browser voice instead' : key ? '✓ ElevenLabs voice active' : 'Using browser voices'), 4000)
+    setMsg('Playing…'); setTimeout(() => setMsg(audio.elevenErr ? '✗ ' + audio.elevenErr : key ? '✓ ElevenLabs voice active — all radio lines will use it' : 'Using browser voices'), 5000)
   }
   return <div className="sg-popup" style={{ top: '22%' }}>
     <h3>VOICE SETUP — ELEVENLABS</h3>
     <p>Paste your ElevenLabs API key for realistic radio voices (a different voice per role). The key is saved only in this browser and sent only to api.elevenlabs.io. Leave empty to use built-in browser voices.</p>
     <input type="password" placeholder="ElevenLabs API key" value={key} onChange={(e) => setKey(e.target.value)} style={{ width: '100%', fontSize: '1rem', padding: '.4rem' }} />
     <div className="sg-btns"><button onClick={test}>SAVE & TEST VOICE</button><button onClick={() => { apply(''); setKey(''); setMsg('Key removed') }}>REMOVE KEY</button>
+      <button disabled={!key} onClick={() => { store.save.settings.elevenOn = !on; store.persist(); store.applyAudio(); audio.stopAll(); setMsg(!on ? 'ElevenLabs ON — every radio line uses it' : 'ElevenLabs OFF — using browser voices'); store.notify() }}>ELEVENLABS: {on && key ? 'ON' : 'OFF'}</button>
       <button onClick={() => { store.save.settings.voice = !store.save.settings.voice; store.persist(); store.applyAudio(); store.notify() }}>RADIO VOICE: {store.save.settings.voice ? 'ON' : 'OFF'}</button><button onClick={onClose}>CLOSE</button></div>
+    {audio.elevenErr && audio.usingEleven && <p className="r">{audio.elevenErr}</p>}
     {msg && <p className="amber">{msg}</p>}
   </div>
 }

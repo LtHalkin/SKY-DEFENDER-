@@ -54,7 +54,8 @@ export function opLabel(st: GameState, op: Operation) {
   return `${op.type}${tgt ? ' ' + tgt : ''}`
 }
 
-export function createOp(st: GameState, spec: OpSpec): { ok: true; id: string } | { ok: false; error: string } {
+export function createOp(st: GameState, spec0: OpSpec): { ok: true; id: string } | { ok: false; error: string } {
+  let spec = spec0
   const type = spec.type
   const tr = spec.trackId ? st.tracks[spec.trackId] : undefined
   const op: Operation = { id: `OP${String(Object.keys(st.ops).length + 1).padStart(3, '0')}`, type, status: 'ACTIVE', stages: STAGES[type], stage: 0, assets: [], created: st.t, updated: st.t, log: [], result: '', stageSince: st.t, data: {} }
@@ -90,7 +91,11 @@ export function createOp(st: GameState, spec: OpSpec): { ok: true; id: string } 
     st.ops[op.id] = op; return { ok: true, id: op.id }
   }
   if (type === 'REFUEL') {
-    const tanker = spec.tankerId ? st.assets[spec.tankerId] : pickAsset(st, ['TANKER'], spec.point ?? asset?.ac ?? { lat: 54, lon: -3 })
+    const onStation = (a: Asset) => !!a.ac && !!a.opId && st.ops[a.opId]?.type === 'PATROL' && st.ops[a.opId]?.status === 'ACTIVE'
+    const from = asset?.ac ?? spec.point ?? { lat: 54, lon: -3 }
+    const airTankers = Object.values(st.assets).filter((a) => ASSET_TYPES[a.typeId].role === 'TANKER' && a.ac && (onStation(a) || !a.opId) && a.fuelKg - ASSET_TYPES[a.typeId].fuelCap * 0.2 > 4000).sort((p, q) => distNm(p.ac!, from) - distNm(q.ac!, from))
+    const tanker = spec.tankerId ? st.assets[spec.tankerId] : airTankers[0] ?? pickAsset(st, ['TANKER'], from)
+    if (tanker && onStation(tanker)) { const pop = st.ops[tanker.opId!]; op.data.resumeLat = pop.point!.lat; op.data.resumeLon = pop.point!.lon; endOp(st, pop, 'COMPLETE', 'Tanker re-tasked to refuel', false); if (!spec.point) spec = { ...spec, point: { lat: tanker.ac!.lat, lon: tanker.ac!.lon } } }
     const recv = asset
     if (!tanker || ASSET_TYPES[tanker.typeId].role !== 'TANKER') return { ok: false, error: 'No tanker available' }
     if (!recv || !recv.ac) return { ok: false, error: 'Select an airborne receiver' }
@@ -438,7 +443,7 @@ function stepRefuel(st: GameState, op: Operation) {
       const avail = tk.fuelKg - tt.fuelCap * 0.2, room = rt2.fuelCap - rv.fuelKg
       const amt = Math.max(0, Math.min(25 * 1, avail, room))
       tk.fuelKg -= amt; rv.fuelKg += amt; op.data.given = ((op.data.given as number) ?? 0) + amt
-      if (amt <= 0.01 || room <= 1) { setStage(st, op, 5, `Transfer complete: ${Math.round((op.data.given as number) ?? 0)} kg`); rv.lowWarned = false; rv.bingoWarned = false; say(st, { channel: 'TANKER', from: tk.callsign, to: 'OPS', text: `${rt(tk.callsign)}, ${rv.callsign} has taken ${Math.round(((op.data.given as number) ?? 0) / 100) / 10} tonnes. Disconnect.`, voice: 'TANKER', ref: op.id, refKind: 'op' }) }
+      if (amt <= 0.01 || room <= 1) { rv.fuelWarned = false; setStage(st, op, 5, `Transfer complete: ${Math.round((op.data.given as number) ?? 0)} kg`); rv.lowWarned = false; rv.bingoWarned = false; say(st, { channel: 'TANKER', from: tk.callsign, to: 'OPS', text: `${rt(tk.callsign)}, ${rv.callsign} has taken ${Math.round(((op.data.given as number) ?? 0) / 100) / 10} tonnes. Disconnect.`, voice: 'TANKER', ref: op.id, refKind: 'op' }) }
       break
     }
     case 5: {
@@ -446,6 +451,11 @@ function stepRefuel(st: GameState, op: Operation) {
       const rop = rv.opId && st.ops[rv.opId]?.status === 'ACTIVE' ? st.ops[rv.opId] : null
       if (rv.ac && !rop) sendHome(st, rv)
       if (rv.ac && rop) rv.ac.nav = { ...rv.ac.nav, mode: 'HOLD', orbit: { c: { lat: rv.ac.lat, lon: rv.ac.lon }, r: 6 } }
+      if (tk.ac && op.data.resumeLat !== undefined) {
+        endOp(st, op, 'COMPLETE', `Delivered ${Math.round(((op.data.given as number) ?? 0))} kg to ${rv.callsign}`, false)
+        createOp(st, { type: 'PATROL', assetId: tk.id, point: { lat: op.data.resumeLat as number, lon: op.data.resumeLon as number }, radius: 15, durationMin: 9999 })
+        break
+      }
       if (tk.ac) sendHome(st, tk)
       setStage(st, op, 6, 'Breakaway. Tanker returning to base')
       break

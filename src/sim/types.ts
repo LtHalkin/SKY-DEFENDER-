@@ -111,6 +111,7 @@ export interface Asset {
   launchAt?: number
   missiles: number; maxMissiles: number
   hold?: boolean
+  speedMode?: 'ECO' | 'CRUISE' | 'MAX'; fuelWarned?: boolean
   bingoWarned?: boolean; lowWarned?: boolean
   ac: Aircraft | null
   sorties: number
