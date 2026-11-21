@@ -17,7 +17,7 @@ npm run build      # static output in dist/
 - `scripts/build-geography.mjs` regenerates the coastline data.
 
 ## Modes
-Quick Watch (simple arcade-style view, 10-minute shift), Combat Ready, Instant Action, Basic Training (5 lessons), Trade Training (8 unlockable scenarios with mentor), Sandbox.
+The game is a simple arcade-style 10-minute shift (the earlier full workstation UI was removed; the full simulation engine remains in `src/sim`). Optional ElevenLabs radio voices: VOICE button, paste your own API key (stored only in your browser).
 
 ## Notes
 - Aircraft register: 440+ generated records; airways/fixes are invented but plausible, not real AIP data.

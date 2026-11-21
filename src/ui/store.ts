@@ -39,13 +39,13 @@ class Store {
   get st(): GameState | null { return this.engine?.st ?? null }
 
   setScreen(s: Screen) { this.screen = s; this.notify() }
-  applyProfileAudio() { const s = this.profile.settings; audio.volume = s.volume; audio.voiceOn = s.voice; audio.sfxOn = s.sfx }
+  applyProfileAudio() { const s = this.profile.settings; audio.volume = s.volume; audio.voiceOn = s.voice; audio.sfxOn = s.sfx; audio.eleven.key = s.elevenKey ?? '' }
 
   start(cfg: GameConfig) {
     audio.unlock(); this.applyProfileAudio(); audio.stopAll()
     this.cfg = cfg
     const e = new SimEngine(cfg); e.warm(150)
-    this.simple = cfg.scenarioId === 'QUICK'
+    this.simple = true
     if (this.simple) { e.st.flags.quick = true; e.st.flags.limit = 600; e.st.nextEvent = e.st.t + 25 }
     this.engine = e; this.paused = false; this.speed = 1; this.sel = {}; this.pick = null; this.banner = null; this.debrief = null
     this.view = { lat: 55.2, lon: -2.5, rangeNm: cfg.mode === 'BASIC' ? 300 : this.simple ? 420 : 330 }

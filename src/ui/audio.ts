@@ -46,25 +46,50 @@ class AudioEngine {
     this.queue.push(m); this.pump()
   }
   stopAll() { this.queue = []; try { window.speechSynthesis?.cancel() } catch { /* none */ } this.speaking = false }
+  eleven = { key: '' }
+  elevenErr = ''
+  private cache = new Map<string, string>()
+  private async playEleven(m: Message, txt: string): Promise<boolean> {
+    const id = ELEVEN_VOICES[m.voice] ?? ELEVEN_VOICES.OPS
+    const ck = id + '|' + txt
+    let url = this.cache.get(ck)
+    try {
+      if (!url) {
+        const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${id}?output_format=mp3_44100_64`, { method: 'POST', headers: { 'xi-api-key': this.eleven.key, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: txt, model_id: 'eleven_turbo_v2_5' }) })
+        if (!r.ok) { this.elevenErr = `ElevenLabs error ${r.status}${r.status === 401 ? ' (check API key)' : ''}`; return false }
+        url = URL.createObjectURL(await r.blob()); this.cache.set(ck, url)
+      }
+      this.elevenErr = ''
+      const a = new Audio(url); a.volume = this.volume
+      await new Promise<void>((res) => { a.onended = () => res(); a.onerror = () => res(); a.play().catch(() => res()) })
+      return true
+    } catch (e) { this.elevenErr = 'ElevenLabs request failed (network/CORS)'; return false }
+  }
   private pump() {
     if (this.speaking) return
     const m = this.queue.shift(); if (!m) return
     if (!this.voices.length) this.loadVoices()
     this.speaking = true
-    const prof: Record<string, [number, number, number]> = { CONTROLLER: [1.25, 1.0, 0], PILOT: [0.75, 1.12, 1], INTEL: [0.55, 0.92, 2], AIRFIELD: [1.0, 1.02, 3], TANKER: [0.65, 1.05, 4], OPS: [1.1, 1.0, 5], SYSTEM: [1.5, 1.1, 0] }
-    const [pitch, rate, vi] = prof[m.voice] ?? [1, 1, 0]
-    this.noise(0.12, 0.07)
-    const txt = m.text.replace(/\bFL(\d+)/g, 'flight level $1').replace(/\bNM\b/g, 'nautical miles').replace(/\bkt\b/g, 'knots').replace(/\bSSR\b/g, 'S S R').replace(/[A-Z]{3}\d{1,4}\b/g, (x) => x)
+    const txt = m.text.replace(/\bFL(\d+)/g, 'flight level $1').replace(/\bNM\b/g, 'nautical miles').replace(/\bkt\b/g, 'knots').replace(/\bSSR\b/g, 'S S R')
     const done = () => { this.noise(0.08, 0.05); this.speaking = false; setTimeout(() => this.pump(), 250) }
-    try {
-      const u = new SpeechSynthesisUtterance(txt)
-      u.pitch = pitch; u.rate = rate; u.volume = this.volume
-      if (this.voices.length) u.voice = this.voices[vi % this.voices.length]
-      u.lang = u.voice?.lang ?? 'en-GB'
-      u.onend = done; u.onerror = done
-      window.speechSynthesis.speak(u)
-      setTimeout(() => { if (this.speaking && !window.speechSynthesis.speaking) done() }, 3000 + txt.length * 90)
-    } catch { done() }
+    this.noise(0.12, 0.07)
+    const browser = () => {
+      const prof: Record<string, [number, number, number]> = { CONTROLLER: [1.25, 1.0, 0], PILOT: [0.75, 1.12, 1], INTEL: [0.55, 0.92, 2], AIRFIELD: [1.0, 1.02, 3], TANKER: [0.65, 1.05, 4], OPS: [1.1, 1.0, 5], SYSTEM: [1.5, 1.1, 0] }
+      const [pitch, rate, vi] = prof[m.voice] ?? [1, 1, 0]
+      try {
+        const u = new SpeechSynthesisUtterance(txt)
+        u.pitch = pitch; u.rate = rate; u.volume = this.volume
+        if (this.voices.length) u.voice = this.voices[vi % this.voices.length]
+        u.lang = u.voice?.lang ?? 'en-GB'
+        u.onend = done; u.onerror = done
+        window.speechSynthesis.speak(u)
+        setTimeout(() => { if (this.speaking && !window.speechSynthesis.speaking) done() }, 3000 + txt.length * 90)
+      } catch { done() }
+    }
+    if (this.eleven.key) this.playEleven(m, txt).then((ok) => (ok ? done() : browser()))
+    else browser()
   }
 }
+/** Default ElevenLabs premade voices per radio role. */
+export const ELEVEN_VOICES: Record<string, string> = { CONTROLLER: '21m00Tcm4TlvDq8ikWAM', PILOT: 'pNInz6obpgDQGcFmaJgB', INTEL: 'TxGEqnHWrfWFTfGW9XjX', AIRFIELD: 'ErXwobaYiN019PkySvjV', TANKER: 'VR6AewLTigWG4xSOukaG', OPS: 'EXAVITQu4vr4xnSDxMaL', SYSTEM: 'AZnzlk1XvdvUeBnXmlld' }
 export const audio = new AudioEngine()

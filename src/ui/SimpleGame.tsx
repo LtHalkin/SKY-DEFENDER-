@@ -9,7 +9,9 @@ import { opLabel } from '../sim/operations'
 import { computeScores } from '../sim/scoring'
 import type { Track } from '../sim/types'
 import { store, useStore } from './store'
-import { makeProj } from './RadarCanvas'
+import { makeProj } from './proj'
+import { audio } from './audio'
+import { saveProfile } from './profile'
 import { Btn, hms } from './common'
 
 const COAST = (geo as any).coast as number[][][]
@@ -25,7 +27,7 @@ export function SimpleGame() {
   const ref = useRef<HTMLCanvasElement>(null), wrap = useRef<HTMLDivElement>(null)
   const hits = useRef<{ id: string; asset?: string; x: number; y: number }[]>([])
   const drag = useRef<{ x: number; y: number; lat: number; lon: number; moved: boolean } | null>(null)
-  const [dismissed, setDismissed] = useState<string[]>([])
+  const [dismissed, setDismissed] = useState<string[]>([]); const [voice, setVoice] = useState(false)
   const speed = useStore((s) => s.speed), paused = useStore((s) => s.paused)
   const selT = useStore((s) => s.sel.track), selA = useStore((s) => s.sel.asset)
   useStore((s) => s.view)
@@ -88,7 +90,7 @@ export function SimpleGame() {
         <div className="sg-box"><small>SHIFT TIME LEFT</small><b className="sg-time">{Math.floor(left / 60)}:{String(Math.floor(left % 60)).padStart(2, '0')}</b></div>
         <div className="sg-box"><small>UNKNOWN</small><b className="y">{counts.unk}</b></div><div className="sg-box"><small>SUSPICIOUS</small><b className="p">{counts.sus}</b></div><div className="sg-box"><small>EMERGENCY</small><b className="o">{counts.em}</b></div>
         <div className="sg-box"><small>GRADE</small><b>{sc.grade}</b></div><div className="sg-box"><small>JETS READY</small><b className="g">{ready}</b></div>
-        <div className="sg-ctl"><button onClick={() => store.togglePause()} className={paused ? 'on' : ''}>{paused ? '▶' : 'II'}</button>{[1, 2, 4].map((s) => <button key={s} className={!paused && speed === s ? 'on' : ''} onClick={() => store.setSpeed(s)}>{s}x</button>)}<button onClick={() => { if (confirm('End shift now?')) store.endWatch() }}>END</button><button onClick={() => { if (confirm('Quit to menu?')) { store.stop(); store.engine = null; store.setScreen('MENU') } }}>EXIT</button></div>
+        <div className="sg-ctl"><button onClick={() => store.togglePause()} className={paused ? 'on' : ''}>{paused ? '▶' : 'II'}</button>{[1, 2, 4].map((s) => <button key={s} className={!paused && speed === s ? 'on' : ''} onClick={() => store.setSpeed(s)}>{s}x</button>)}<button onClick={() => setVoice(true)}>VOICE</button><button onClick={() => { if (confirm('End shift now?')) store.endWatch() }}>END</button><button onClick={() => { if (confirm('Quit to menu?')) { store.stop(); store.engine = null; store.setScreen('MENU') } }}>EXIT</button></div>
       </div>
       <div className="sg-hint">{counts.em ? 'EMERGENCY — an aircraft needs help. Click the orange plane.' : counts.unk + counts.sus ? 'Yellow/purple planes need checking. Click one.' : 'ALL CLEAR — nothing needs your attention.'} · White = safe · Yellow = unknown · Purple = suspicious · Orange = emergency · Green = yours</div>
       <div className="sg-panel sg-contact"><div className="sg-ph">CONTACT DATA</div>
@@ -121,6 +123,7 @@ export function SimpleGame() {
         {Object.values(st.assets).filter((a) => a.ac || a.status === 'LAUNCHING').map((a) => <div key={a.id} className="sg-row" onClick={() => { store.sel.track = undefined; store.sel.asset = a.id; if (a.ac) store.centreOn(a.ac); store.notify() }}><b className="g">{a.callsign}</b> {ASSET_TYPES[a.typeId].short} // {a.opId && st.ops[a.opId] ? opLabel(st, st.ops[a.opId]) + ' ' + st.ops[a.opId].stages[st.ops[a.opId].stage] : a.status} // FUEL {Math.round((a.fuelKg / ASSET_TYPES[a.typeId].fuelCap) * 100)}%</div>)}
         {!Object.values(st.assets).some((a) => a.ac || a.status === 'LAUNCHING') && <div className="dim">No aircraft airborne. Select a contact and press SEND JET.</div>}</div>
       {last && <div className="sg-bar"><b>{last.from}:</b> {last.text}</div>}
+      {voice && <VoiceSetup onClose={() => setVoice(false)} />}
       {popup && <div className={`sg-popup ${popup.kind === 'EMERGENCY_7700' || popup.kind === 'UNLAWFUL_7500' ? 'em' : ''}`}>
         <h3>! {popup.title}</h3><p>{popup.needs}. {popup.kind === 'EMERGENCY_7700' ? 'The aircraft is diverting to the nearest airport — alert it so the runway is cleared.' : popup.kind === 'UNLAWFUL_7500' ? 'Alert the destination airport and send a jet to follow it.' : 'Check it, then decide: safe or suspicious?'}</p>
         <div className="sg-btns">
@@ -131,4 +134,22 @@ export function SimpleGame() {
         <small className="dim">{fmtHM(popup.opened)}</small></div>}
     </div>
   )
+}
+
+export function VoiceSetup({ onClose }: { onClose: () => void }) {
+  const [key, setKey] = useState(store.profile.settings.elevenKey ?? '')
+  const [msg, setMsg] = useState('')
+  const apply = (k: string) => { audio.eleven.key = k.trim(); store.profile.settings.elevenKey = k.trim(); saveProfile(store.profile) }
+  const test = () => {
+    apply(key); audio.unlock(); audio.stopAll()
+    audio.speak({ id: 0, t: 0, channel: 'ATC', from: 'TEST', to: 'OPS', text: 'Skywatch, Speedbird one two three, mayday, mayday, mayday. Smoke in the cabin, request vectors to the nearest airport.', voice: 'PILOT', sev: 'URGENT', speak: true })
+    setMsg('Playing… if you only hear a robotic voice, ElevenLabs failed.'); setTimeout(() => setMsg(audio.elevenErr ? '✗ ' + audio.elevenErr + ' — using browser voice instead' : key ? '✓ ElevenLabs voice active' : 'Using browser voices'), 4000)
+  }
+  return <div className="sg-popup" style={{ top: '25%' }}>
+    <h3>VOICE SETUP — ELEVENLABS</h3>
+    <p>Paste your ElevenLabs API key to use ElevenLabs voices for the radio (different voice per role). The key is stored only in this browser and sent only to api.elevenlabs.io. Leave empty for the built-in browser voices. Each new line of speech uses a little of your ElevenLabs credit.</p>
+    <input type="password" placeholder="ElevenLabs API key (sk_…)" value={key} onChange={(e) => setKey(e.target.value)} style={{ width: '100%', fontSize: '1rem', padding: '.4rem' }} />
+    <div className="sg-btns"><button onClick={test}>SAVE & TEST VOICE</button><button onClick={() => { apply(''); setKey(''); setMsg('Key removed') }}>REMOVE KEY</button><button onClick={onClose}>CLOSE</button></div>
+    {msg && <p className="amber">{msg}</p>}
+  </div>
 }

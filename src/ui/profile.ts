@@ -3,7 +3,7 @@ export interface Profile {
   records: Record<string, Record1>
   tradeBest: Record<string, { grade: string; score: number; result: string }>
   lessonsDone: string[]
-  settings: { volume: number; voice: boolean; uiScale: number; sfx: boolean; trail: number }
+  settings: { volume: number; voice: boolean; uiScale: number; sfx: boolean; trail: number; elevenKey?: string }
   totals: { idCorrect: number; incidentsHandled: number; watches: number }
 }
 const KEY = 'sd.profile.v1', LKEY = 'sd.layout.v1'
