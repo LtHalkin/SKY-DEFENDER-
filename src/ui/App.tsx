@@ -4,7 +4,7 @@ import { store, useStore } from './store'
 import { Game, VoiceSetup } from './Game'
 import { audio } from './audio'
 import { BASES, ITEMS, UPGRADES, type ItemKind } from '../game/catalog'
-import { exportSave, freshSave, importSave, levelOf, MEDALS, newId, rankOf, sellPrice, writeSave } from '../game/save'
+import { exportSave, freshSave, importSave, levelOf, MEDALS, newId, rankOf, redeem, sellPrice, writeSave } from '../game/save'
 
 export function App() {
   const screen = useStore((s) => s.screen)
@@ -162,7 +162,7 @@ function Stats() {
 }
 
 function Settings() {
-  const [voice, setVoice] = useState(false); const [code, setCode] = useState(''); const [msg, setMsg] = useState('')
+  const [voice, setVoice] = useState(false); const [code, setCode] = useState(''); const [msg, setMsg] = useState(''); const [promo, setPromo] = useState('')
   useStore((s) => s.version)
   const sv = store.save
   const set = (k: 'volume' | 'voice' | 'sfx', v: any) => { (sv.settings as any)[k] = v; store.persist(); store.applyAudio(); store.notify() }
@@ -171,6 +171,8 @@ function Settings() {
     <div className="row"><span>VOLUME</span><input type="range" min={0} max={1} step={0.05} value={sv.settings.volume} onChange={(e) => set('volume', +e.target.value)} /></div>
     <div className="row"><span>RADIO VOICES</span><button onClick={() => set('voice', !sv.settings.voice)}>{sv.settings.voice ? 'ON' : 'OFF'}</button><button onClick={() => setVoice(true)}>ELEVENLABS VOICE…</button><span className="dim">{sv.settings.elevenKey ? 'ElevenLabs key saved' : 'Using browser voices'}</span></div>
     <div className="row"><span>SOUND EFFECTS</span><button onClick={() => set('sfx', !sv.settings.sfx)}>{sv.settings.sfx ? 'ON' : 'OFF'}</button></div>
+    <h2>REDEEM CODE</h2>
+    <div className="row"><input value={promo} onChange={(e) => setPromo(e.target.value)} placeholder="Enter code" style={{ fontSize: '1rem', padding: '.4rem', width: '16rem' }} /><button onClick={() => { const r = redeem(sv, promo); if (typeof r === 'number') { store.persist(); audio.coin(); setMsg(`+${r.toLocaleString()} Skycoins added`); setPromo('') } else setMsg(r); store.notify() }}>REDEEM</button></div>
     <h2>SAVE GAME</h2>
     <p className="dim">Progress saves automatically in this browser after every shift and purchase. To move it to another device, copy the save code and paste it there.</p>
     <div className="row"><button onClick={() => { const c = exportSave(sv); setCode(c); navigator.clipboard?.writeText(c).then(() => setMsg('Save code copied to clipboard'), () => setMsg('Copy the code below')) }}>EXPORT SAVE CODE</button>

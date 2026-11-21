@@ -237,3 +237,20 @@ describe('combat', () => {
     expect(e.st.coins).toBeLessThan(0)
   })
 })
+
+describe('save', () => {
+  it('redeem codes grant coins once', async () => {
+    const { freshSave, redeem } = await import('../src/game/save')
+    const s = freshSave(); const c0 = s.coins
+    expect(redeem(s, 'skymillion')).toBe(1_000_000); expect(s.coins).toBe(c0 + 1_000_000)
+    expect(redeem(s, 'SKYMILLION')).toMatch(/already/); expect(redeem(s, 'NOPE')).toMatch(/Unknown/)
+  })
+  it('an ATC check that confirms the flight resolves a missing-plan incident', () => {
+    const e = new SimEngine(defaultConfig({ incidents: false, intel: false, radarFaults: false, seed: 61 })); e.warm(90)
+    spawnEvent(e.st, 'missing')
+    let inc; for (let i = 0; i < 300 && !inc; i++) { e.step(1); inc = e.st.incidents.find((x) => x.kind === 'MISSING_PLAN') }
+    const tr = Object.values(e.st.tracks).find((t) => t.entityId === inc!.entityId)!
+    e.dispatch({ c: 'atc', trackId: tr.id }); e.step(20)
+    expect(inc!.status).toBe('RESOLVED')
+  })
+})

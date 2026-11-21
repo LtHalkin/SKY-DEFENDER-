@@ -286,7 +286,7 @@ export function Game() {
           {(ipop.kind === 'EMERGENCY_7700' || ipop.kind === 'UNLAWFUL_7500') && <button className="o" onClick={() => { store.dispatch({ c: 'alertAirfield', incidentId: ipop.id }); if (ipop.kind === 'UNLAWFUL_7500' && ptr) order({ type: 'SHADOW', trackId: ptr.id }) }}>ALERT AIRPORT{ipop.kind === 'UNLAWFUL_7500' ? ' + SEND JET' : ''}</button>}
           {!['EMERGENCY_7700', 'UNLAWFUL_7500', 'COMMS_7600', 'HOSTILE'].includes(ipop.kind) && ptr && <button onClick={() => { store.dispatch({ c: 'atc', trackId: ptr.id }); store.dispatch({ c: 'registry', trackId: ptr.id }); store.dispatch({ c: 'ack', incidentId: ipop.id }); show(ptr) }}>CHECK IT</button>}
           <button onClick={() => show(ptr)}>SHOW ME</button>
-          <button onClick={() => { store.dispatch({ c: 'ack', incidentId: ipop.id }); dismiss(ipop.id) }}>GOT IT</button></div></div>}
+          <button onClick={() => { if (ipop.kind === 'EMERGENCY_7700' || ipop.kind === 'UNLAWFUL_7500') store.dispatch({ c: 'alertAirfield', incidentId: ipop.id }); store.dispatch({ c: 'ack', incidentId: ipop.id }); dismiss(ipop.id) }}>GOT IT</button></div></div>}
       {voice && <VoiceSetup onClose={() => setVoice(false)} />}
     </div>
   )

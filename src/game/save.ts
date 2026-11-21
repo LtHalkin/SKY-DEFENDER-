@@ -7,7 +7,7 @@ export interface Save {
   fleet: Owned[]; batteries: OwnedBattery[]; upgrades: Record<string, number>
   stats: { shifts: number; splashes: number; ids: number; emergencies: number; best: number; breaches: number; coinsEarned: number; bestGrade: string; complied: number }
   settings: { volume: number; voice: boolean; sfx: boolean; elevenKey: string }
-  medals: string[]; tutorial: boolean; lastShift?: { grade: string; score: number; coins: number }
+  medals: string[]; tutorial: boolean; redeemed?: string[]; lastShift?: { grade: string; score: number; coins: number }
 }
 const KEY = 'sd.save.v2'
 let nid = Date.now() % 100000
@@ -51,4 +51,12 @@ export const MEDALS: { id: string; name: string; desc: string }[] = [
   { id: 'veteran', name: 'VETERAN', desc: 'Complete 10 shifts' },
   { id: 'collector', name: 'COLLECTOR', desc: 'Own 8 aircraft' },
 ]
+const CODES: Record<string, number> = { SKYMILLION: 1_000_000 }
+/** One-time redeemable coin codes. Returns coins granted or an error message. */
+export function redeem(s: Save, code: string): number | string {
+  const c = code.trim().toUpperCase(); const n = CODES[c]
+  if (!n) return 'Unknown code'
+  if ((s.redeemed ?? []).includes(c)) return 'Code already used on this save'
+  s.redeemed = [...(s.redeemed ?? []), c]; s.coins += n; return n
+}
 export const sellPrice = (typeId: string) => Math.round((ITEM_MAP[typeId]?.price ?? 0) * 0.5)

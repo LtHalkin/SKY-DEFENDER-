@@ -131,12 +131,13 @@ function spawnEmergency(st: GameState): Aircraft | null {
   const c = airborne(st, (a) => ['AIRLINER', 'REGIONAL', 'CARGO', 'BIZJET', 'GA'].includes(a.role) && a.truth.intent === 'normal' && !a.emergency && insideADR(a) && a.alt > 2500 && a.phase !== 'ARRIVING' && a.xpdr.on)
   if (!c.length) return null
   const ac = st.rng.pick(c)
-  const ap = nearestCivAirport(ac, ac.role === 'GA' ? 1 : 3)
+  const cands = AIRPORTS.filter((x) => (x.country === 'GB' || x.country === 'IE') && x.kind === 'CIV' && x.size >= (ac.role === 'GA' ? 1 : 3)).sort((p, q) => distNm(ac, p) - distNm(ac, q))
+  const ap = cands.find((x) => distNm(ac, x) >= (st.flags.quick ? 110 : 40)) ?? cands[cands.length - 1]
   ac.xpdr.squawk = '7700'; ac.emergency = { kind: '7700', since: st.t, divertTo: ap.icao }
   ac.truth = { intent: 'emergency', legit: true, benign: true, note: 'Genuine emergency, diverting' }
   ac.nav = { mode: 'LAND', wps: [], wpi: 0, final: 'LAND', dest: ap.icao }; ac.tgtAlt = Math.min(ac.alt, 12000)
   const reason = st.rng.pick(['medical emergency on board', 'engine failure', 'smoke in the cabin', 'hydraulic failure', 'low fuel'])
-  const inc = openIncident(st, { kind: 'EMERGENCY_7700', title: `${ac.callsign} 7700 — ${reason.toUpperCase()}`, severity: 2, entityId: ac.id, needs: `ACKNOWLEDGE; ALERT ${ap.icao} BEFORE LANDING`, deadlineSec: Math.max(300, (distNm(ac, ap) / Math.max(ac.gs, 150)) * 3600) })
+  const inc = openIncident(st, { kind: 'EMERGENCY_7700', title: `${ac.callsign} 7700 — ${reason.toUpperCase()}`, severity: 2, entityId: ac.id, needs: `ACKNOWLEDGE; ALERT ${ap.icao} BEFORE LANDING`, deadlineSec: Math.max(600, (distNm(ac, ap) / Math.max(ac.gs, 150)) * 3600) })
   say(st, { channel: 'ATC', from: 'AREA CONTROL', to: 'OPS', text: `Mayday relay. ${rt(ac)}, ${ac.typeId}, ${reason}, squawking seven seven zero zero, diverting to ${ap.name}. ${flStr(ac.alt)}, ${areaText(ac)}.`, voice: 'CONTROLLER', sev: 'URGENT', ref: inc.id, refKind: 'incident' })
   st.events.push({ type: 'emergency', trackId: st.trackByEntity[ac.id] ?? '', code: '7700' })
   return ac
@@ -346,13 +347,14 @@ export function monitorIncidents(st: GameState) {
         const classified = !!tr?.manual
         const atc = !!tr?.checks.atc
         const truth = ent?.truth
+        if ((inc.kind === 'MISSING_PLAN' || inc.kind === 'XPDR_FAULT') && atc && tr?.checks.atc?.found) { if (!inc.acked) ackIncident(st, inc.id); closeIncident(st, inc, 'RESOLVED', 'Confirmed with ATC'); break }
         if (inc.kind === 'PLAN_DEVIATION' && (atc || (ent && st.plans[ent.planId ?? '']?.amended?.startsWith('AMENDED')))) { if (!inc.acked) ackIncident(st, inc.id); closeIncident(st, inc, 'RESOLVED', atc ? 'Confirmed with ATC — weather deviation' : 'Plan amended'); break }
         if (classified && tr && truth) {
           const m = tr.manual!
           const ok = (m === 'IDENTIFIED' && (truth.legit || truth.intent === 'phenomenon')) || (m === 'SUSPICIOUS' && !truth.legit) || m === 'UNRESOLVED'
           if (m === 'UNRESOLVED') break
           if (!inc.acked) ackIncident(st, inc.id)
-          closeIncident(st, inc, ok ? 'RESOLVED' : 'FAILED', ok ? `Classified ${m}` : `Misclassified as ${m}: ${truth.note}`)
+          closeIncident(st, inc, ok ? 'RESOLVED' : 'FAILED', ok ? `Classified ${m}` : `Wrong call (${m === 'IDENTIFIED' ? 'marked safe' : 'flagged suspicious'}) — it was: ${truth.note}`)
           if (!ok) bumpTension(st, 0.04)
           break
         }
