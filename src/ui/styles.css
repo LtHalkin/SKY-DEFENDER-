@@ -213,3 +213,4 @@ b.night { color:#9fb6ff; }
 .sg.mobile .sg-popup { width:96vw; left:2vw; transform:none; top:4.6rem; max-height:70vh; overflow:auto; padding:.7rem; }
 .sg.mobile .sg-speed { grid-template-columns:repeat(2,1fr); }
 .sg.mobile .sg-panel { background:#04100a !important; }
+.auto-btn { border-color:#ffde59; color:#ffde59; padding:.5rem 1rem; margin:.4rem 0 .8rem; } .auto-btn:hover { background:#ffde59 !important; color:#111 !important; }

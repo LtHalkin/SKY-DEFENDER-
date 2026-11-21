@@ -327,3 +327,25 @@ describe('campaign', () => {
     for (const id of ['M1', 'M2', 'M4']) { const st = await play(id, true); expect([id, st.flags.result, st.objectives.map((o) => o.done)]).toEqual([id, 'COMPLETE', st.objectives.map(() => true)]) }
   }, 60000)
 })
+
+describe('auto placement', () => {
+  it('spreads new purchases across the best bases and sites', async () => {
+    const { bestBase, bestSamSite, bestRadarSite, autoArrange } = await import('../src/game/placement')
+    const { freshSave } = await import('../src/game/save')
+    const s = freshSave(); s.fleet = []; s.batteries = []; s.radars = []
+    const jets: string[] = [], sams: string[] = [], rads: string[] = []
+    for (let i = 0; i < 6; i++) { const b = bestBase(s, 'F16'); jets.push(b); s.fleet.push({ id: 'J' + i, typeId: 'F16', base: b }) }
+    for (let i = 0; i < 6; i++) { const t = i % 2 ? 'RAPIER' : 'BLOODHOUND'; const site = bestSamSite(s, t); sams.push(site); s.batteries.push({ id: 'S' + i, typeId: t, site }) }
+    for (const t of ['GAPFILLER', 'GAPFILLER', 'MOBILE', 'LONGRANGE']) { const site = bestRadarSite(s, t); rads.push(t + '@' + site); s.radars.push({ id: 'R' + rads.length, typeId: t, site }) }
+    const tankers: string[] = []; for (let i = 0; i < 3; i++) { const b = bestBase(s, 'VC10'); tankers.push(b); s.fleet.push({ id: 'T' + i, typeId: 'VC10', base: b }) }
+    expect(new Set(jets.slice(0, 4)).size).toBe(4)          // first four fighters all at different bases
+    expect(bestSamSite({ batteries: [] }, 'RAPIER')).toBe('LONDON')  // short-range: most valuable single target first
+    expect(new Set(sams).size).toBe(6)                      // no two batteries on the same site
+    expect(new Set(rads.map((r) => r.split('@')[1])).size).toBe(4)
+    expect(new Set(tankers).size).toBe(3)
+    // auto-arrange un-stacks a save where everything was bought at one place
+    const t = freshSave(); t.fleet = Array.from({ length: 5 }, (_, i) => ({ id: 'X' + i, typeId: 'F3', base: 'EGXE' })); t.batteries = Array.from({ length: 4 }, (_, i) => ({ id: 'Y' + i, typeId: 'RAPIER', site: 'LONDON' }))
+    autoArrange(t)
+    expect(new Set(t.fleet.map((f) => f.base)).size).toBeGreaterThanOrEqual(4); expect(new Set(t.batteries.map((b) => b.site)).size).toBe(4)
+  })
+})

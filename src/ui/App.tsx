@@ -5,6 +5,7 @@ import { store, useStore } from './store'
 import { Game, VoiceSetup } from './Game'
 import { audio } from './audio'
 import { BASES, ITEMS, UPGRADES, type ItemKind } from '../game/catalog'
+import { autoArrange, bestBase, bestRadarSite, bestSamSite } from '../game/placement'
 import { exportSave, freshSave, importSave, levelOf, MEDALS, newId, rankOf, redeem, sellPrice, writeSave } from '../game/save'
 
 export function App() {
@@ -97,22 +98,23 @@ function Home() {
 const STAT = ({ k, v, max }: { k: string; v: number; max: number }) => <div className="statbar"><span>{k}</span><i><em style={{ width: `${Math.min(100, (v / max) * 100)}%` }} /></i></div>
 function Shop() {
   const [tab, setTab] = useState<ItemKind>('JET')
-  const [base, setBase] = useState('EGXE'); const [site, setSite] = useState('LONDON'); const [msg, setMsg] = useState('')
+  const [base, setBase] = useState('AUTO'); const [site, setSite] = useState('AUTO'); const [msg, setMsg] = useState('')
   useStore((s) => s.version)
   const sv = store.save, lvl = levelOf(sv.xp).level
-  const [rsite, setRsite] = useState('STORNOWAY')
+  const [rsite, setRsite] = useState('AUTO')
   const buy = (id: string, price: number, kind: ItemKind) => {
     if (sv.coins < price) { setMsg('Not enough Skycoins'); return }
     sv.coins -= price
-    if (kind === 'SAM') sv.batteries.push({ id: newId('S'), typeId: id, site }); else if (kind === 'RADAR') sv.radars.push({ id: newId('R'), typeId: id, site: rsite }); else sv.fleet.push({ id: newId('J'), typeId: id, base })
-    store.persist(); audio.coin(); setMsg(`Bought ${kind === 'SAM' ? BATTERY_TYPES[id].short + ' at ' + SITE_MAP[site].name : kind === 'RADAR' ? GROUND_RADARS[id].short + ' at ' + RADAR_SITE_MAP[rsite].name : ASSET_TYPES[id].short + ' at ' + BASES.find((b) => b.icao === base)!.name}`); store.notify()
+    const site2 = kind !== 'SAM' ? site : site === 'AUTO' ? bestSamSite(sv, id) : site, rsite2 = kind !== 'RADAR' ? rsite : rsite === 'AUTO' ? bestRadarSite(sv, id) : rsite, base2 = kind === 'SAM' || kind === 'RADAR' ? base : base === 'AUTO' ? bestBase(sv, id) : base
+    if (kind === 'SAM') sv.batteries.push({ id: newId('S'), typeId: id, site: site2 }); else if (kind === 'RADAR') sv.radars.push({ id: newId('R'), typeId: id, site: rsite2 }); else sv.fleet.push({ id: newId('J'), typeId: id, base: base2 })
+    store.persist(); audio.coin(); setMsg(`Bought ${kind === 'SAM' ? BATTERY_TYPES[id].short + ' — deployed at ' + SITE_MAP[site2].name : kind === 'RADAR' ? GROUND_RADARS[id].short + ' — built at ' + RADAR_SITE_MAP[rsite2].name : ASSET_TYPES[id].short + ' — based at ' + BASES.find((b) => b.icao === base2)!.name}${(kind === 'SAM' ? site : kind === 'RADAR' ? rsite : base) === 'AUTO' ? ' (best location)' : ''}`); store.notify()
   }
   return <div className="shop">
     <div className="tabs">{(['JET', 'SUPPORT', 'SAM', 'RADAR', 'UPGRADE'] as ItemKind[]).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t === 'JET' ? 'INTERCEPTORS' : t === 'SUPPORT' ? 'TANKERS & AEW' : t === 'SAM' ? 'MISSILE BATTERIES' : t === 'RADAR' ? 'GROUND RADARS' : 'BASE UPGRADES'}</button>)}
       <span className="spacer" />
-      {tab === 'RADAR' && <label>BUILD AT <select value={rsite} onChange={(e) => setRsite(e.target.value)}>{RADAR_SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
-      {tab !== 'UPGRADE' && tab !== 'SAM' && tab !== 'RADAR' && <label>DELIVER TO <select value={base} onChange={(e) => setBase(e.target.value)}>{BASES.map((b) => <option key={b.icao} value={b.icao}>{b.name}</option>)}</select></label>}
-      {tab === 'SAM' && <label>DEPLOY AT <select value={site} onChange={(e) => setSite(e.target.value)}>{SAM_SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
+      {tab === 'RADAR' && <label>BUILD AT <select value={rsite} onChange={(e) => setRsite(e.target.value)}><option value="AUTO">AUTO — best location</option>{RADAR_SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
+      {tab !== 'UPGRADE' && tab !== 'SAM' && tab !== 'RADAR' && <label>DELIVER TO <select value={base} onChange={(e) => setBase(e.target.value)}><option value="AUTO">AUTO — best base</option>{BASES.map((b) => <option key={b.icao} value={b.icao}>{b.name}</option>)}</select></label>}
+      {tab === 'SAM' && <label>DEPLOY AT <select value={site} onChange={(e) => setSite(e.target.value)}><option value="AUTO">AUTO — best location</option>{SAM_SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
     </div>
     {msg && <div className="toast">{msg}</div>}
     <div className="grid-cards">
@@ -122,6 +124,7 @@ function Shop() {
         return <div key={i.id} className={`item-card ${locked ? 'locked' : ''}`}>
           <div className="ic-h"><b>{g?.short ?? t?.short ?? b.short}</b>{owned > 0 && <span className="owned">OWNED ×{owned}</span>}</div>
           <div className="dim">{i.name}</div><p>{i.blurb}</p>
+          {!locked && <div className="dim small">→ {tab === 'SAM' ? SITE_MAP[site === 'AUTO' ? bestSamSite(sv, i.id) : site].name : tab === 'RADAR' ? RADAR_SITE_MAP[rsite === 'AUTO' ? bestRadarSite(sv, i.id) : rsite].name : BASES.find((b) => b.icao === (base === 'AUTO' ? bestBase(sv, i.id) : base))?.name}</div>}
           {t && <>{t.role === 'FIGHTER' ? <><STAT k="SPEED" v={t.maxKt} max={760} /><STAT k="RANGE" v={t.fuelCap / t.burnCruise} max={3.5} /><STAT k="RADAR" v={t.radar} max={100} /><STAT k="MISSILES" v={t.missiles} max={6} /><STAT k="HIT %" v={t.pk} max={1} /></> : <><STAT k="SPEED" v={t.maxKt} max={760} /><STAT k="ENDURANCE" v={t.fuelCap / t.burnCruise} max={12} />{t.offload > 0 && <STAT k="FUEL TO GIVE" v={t.offload} max={60000} />}{t.role === 'AEW' && <STAT k="RADAR" v={t.radar} max={220} />}</>}</>}
           {g && <><STAT k="RANGE" v={g.range} max={260} /><STAT k="LOW-LEVEL COVER" v={g.antennaFt} max={2600} /><STAT k="UPDATE RATE" v={12 - g.sweepSec} max={8} /></>}
           {b && <><STAT k="RANGE" v={b.range} max={45} /><STAT k="MISSILES" v={b.missiles} max={8} /><STAT k="RELOAD" v={140 - b.reloadSec} max={140} /><STAT k="HIT %" v={b.pk} max={1} /></>}
@@ -145,6 +148,7 @@ function Hangar() {
   const change = () => { store.persist(); store.notify() }
   return <div className="hangar">
     <h2>HANGAR — YOUR AIRCRAFT</h2><p className="dim">Move aircraft between bases before a shift. Selling returns half the price.</p>
+    <div className="row"><button className="auto-btn" onClick={() => { if (confirm('Spread all your aircraft, batteries and radars to the best locations?')) { autoArrange(sv); change(); audio.coin() } }}>AUTO-ARRANGE EVERYTHING</button><span className="dim"> Moves every jet, battery and radar to the spot where it adds the most cover.</span></div>
     <table className="tbl"><thead><tr><th>AIRCRAFT</th><th>ROLE</th><th>MISSILES</th><th>BASE</th><th></th></tr></thead><tbody>
       {sv.fleet.map((f) => { const t = ASSET_TYPES[f.typeId]; return <tr key={f.id}><td><b>{t.short}</b> <span className="dim">{t.name}</span></td><td>{t.role}</td><td>{t.missiles ? t.missiles + (sv.upgrades.missiles ?? 0) : '—'}</td>
         <td><select value={f.base} onChange={(e) => { f.base = e.target.value; change() }}>{BASES.map((b) => <option key={b.icao} value={b.icao}>{b.name}</option>)}</select></td>
