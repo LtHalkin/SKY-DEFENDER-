@@ -18,6 +18,7 @@ import { Intel } from './panels/Intel'
 import { Incidents, SystemStatus, Watch } from './panels/Status'
 import { computeScores } from '../sim/scoring'
 import { Btn, hms } from './common'
+import { SimpleGame } from './SimpleGame'
 
 const PANELS: PanelDef[] = [
   { id: 'tracks', title: 'TRACK LIST', render: () => <TrackList />, def: { x: 0.795, y: 0.065, w: 0.2, h: 0.3, open: true } },
@@ -50,7 +51,7 @@ export function App() {
       {screen === 'TRADE' && <TradeMenu />}
       {screen === 'RECORDS' && <Records />}
       {screen === 'BRIEFING' && <Briefing />}
-      {(screen === 'GAME' || screen === 'DEBRIEF') && <Workstation />}
+      {(screen === 'GAME' || screen === 'DEBRIEF') && (store.simple ? <SimpleGame /> : <Workstation />)}
       {screen === 'DEBRIEF' && <Debrief />}
     </div>
   )
@@ -71,6 +72,7 @@ function MainMenu() {
       <div className="mode-grid">
         <button onClick={() => go(defaultConfig({ mode: 'COMBAT', seed: randSeed(), startHour: 6, traffic: 1, weather: 'RANDOM', complexity: 0.6, tension0: 0.03 }))}><b>COMBAT READY</b><span>Endless watch. Quiet start; the situation evolves and your decisions shape it.</span></button>
         <button onClick={() => go(defaultConfig({ mode: 'INSTANT', seed: randSeed(), startHour: 17, traffic: 1.6, weather: 'RAIN', complexity: 1, tension0: 0.55 }))}><b>INSTANT ACTION</b><span>Start in the middle of a busy, high-pressure picture with multiple live incidents.</span></button>
+        <button onClick={() => go(defaultConfig({ mode: 'SANDBOX', scenarioId: 'QUICK', seed: randSeed(), startHour: 14, traffic: 0.7, weather: 'CLEAR', complexity: 1, tension0: 0.3, growth: false }))}><b>QUICK WATCH (SIMPLE)</b><span>Simpler arcade-style view: colour-coded planes, big buttons, 10-minute shift.</span></button>
         <button onClick={() => store.setScreen('TRAINING')}><b>BASIC TRAINING</b><span>Interactive lessons: radar, identification, flight plans, comms, asset management.</span></button>
         <button onClick={() => store.setScreen('TRADE')}><b>TRADE TRAINING</b><span>Eight objective-based scenarios with a mentor. Complete each to unlock the next.</span></button>
         <button onClick={() => store.setScreen('SANDBOX')}><b>SANDBOX</b><span>Configure traffic, weather, radar availability, time of day and complexity.</span></button>
@@ -167,7 +169,7 @@ function Debrief() {
     {s.log.length > 0 && <><div className="sect">DECISION LOG</div><div className="hist">{s.log.slice(-12).map((l, i) => <div key={i} className="dim">{l}</div>)}</div></>}
     <div className="menu-foot">
       <Btn onClick={back}>MAIN MENU</Btn>
-      {(st.cfg.mode === 'COMBAT' || st.cfg.mode === 'SANDBOX' || st.cfg.mode === 'INSTANT') && <Btn kind="ok" onClick={() => { st.ended = false; delete st.flags.result; if (st.cfg.mode === 'INSTANT') st.flags.limit = 1e9; store.debrief = null; store.paused = false; store.screen = 'GAME'; store.notify() }}>CONTINUE WATCH</Btn>}
+      {((st.cfg.mode === 'COMBAT' || st.cfg.mode === 'SANDBOX' || st.cfg.mode === 'INSTANT') && st.cfg.scenarioId !== 'QUICK') && <Btn kind="ok" onClick={() => { st.ended = false; delete st.flags.result; if (st.cfg.mode === 'INSTANT') st.flags.limit = 1e9; store.debrief = null; store.paused = false; store.screen = 'GAME'; store.notify() }}>CONTINUE WATCH</Btn>}
       <Btn onClick={() => { store.stop(); go(st.cfg) }}>REPLAY ▶</Btn>
     </div></div></div>
 }

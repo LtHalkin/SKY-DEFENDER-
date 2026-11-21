@@ -17,7 +17,7 @@ npm run build      # static output in dist/
 - `scripts/build-geography.mjs` regenerates the coastline data.
 
 ## Modes
-Combat Ready, Instant Action, Basic Training (5 lessons), Trade Training (8 unlockable scenarios with mentor), Sandbox.
+Quick Watch (simple arcade-style view, 10-minute shift), Combat Ready, Instant Action, Basic Training (5 lessons), Trade Training (8 unlockable scenarios with mentor), Sandbox.
 
 ## Notes
 - Aircraft register: 440+ generated records; airways/fixes are invented but plausible, not real AIP data.

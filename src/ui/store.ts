@@ -31,6 +31,7 @@ class Store {
   panelRequest: string | null = null
   private raf = 0; private last = 0; private acc = 0; private lastNotify = 0
   stepMsg = ''
+  simple = false
 
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn) } }
   getVersion = () => this.version
@@ -44,8 +45,10 @@ class Store {
     audio.unlock(); this.applyProfileAudio(); audio.stopAll()
     this.cfg = cfg
     const e = new SimEngine(cfg); e.warm(150)
+    this.simple = cfg.scenarioId === 'QUICK'
+    if (this.simple) { e.st.flags.quick = true; e.st.flags.limit = 600; e.st.nextEvent = e.st.t + 25 }
     this.engine = e; this.paused = false; this.speed = 1; this.sel = {}; this.pick = null; this.banner = null; this.debrief = null
-    this.view = { lat: 55.2, lon: -2.5, rangeNm: cfg.mode === 'BASIC' ? 300 : 330 }
+    this.view = { lat: 55.2, lon: -2.5, rangeNm: cfg.mode === 'BASIC' ? 300 : this.simple ? 420 : 330 }
     this.layers = { ...DEFAULT_LAYERS }
     this.screen = 'GAME'; this.acc = 0; this.last = performance.now()
     cancelAnimationFrame(this.raf); this.loop(this.last)
@@ -72,6 +75,7 @@ class Store {
       if (n > 0) this.engine!.step(n)
     }
     this.drainEvents()
+    if (this.simple && !st.ended && st.t - st.startT >= 600) { st.ended = true; st.flags.result = 'ENDED' }
     if (st.ended && this.screen === 'GAME') this.finish()
     if (now - this.lastNotify > 250) { this.lastNotify = now; this.notify() }
   }
