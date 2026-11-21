@@ -24,9 +24,13 @@ function RadarBg() {
   useEffect(() => {
     const cv = ref.current!, ctx = cv.getContext('2d')!; let raf = 0
     const blips = Array.from({ length: 26 }, () => ({ a: Math.random() * 6.28, r: 0.15 + Math.random() * 0.8, c: Math.random() < 0.15 ? '#ff3b3b' : Math.random() < 0.25 ? '#ffe34d' : '#f2f2f2', h: Math.random() * 6.28 }))
+    let lastT = 0
     const f = (t: number) => {
       raf = requestAnimationFrame(f)
-      const w = (cv.width = cv.clientWidth), h = (cv.height = cv.clientHeight), cx = w * 0.68, cy = h * 0.52, R = Math.min(w, h) * 0.46
+      if (t - lastT < 33) return // 30 fps is plenty for the background
+      lastT = t
+      if (cv.width !== cv.clientWidth || cv.height !== cv.clientHeight) { cv.width = cv.clientWidth; cv.height = cv.clientHeight }
+      const w = cv.width, h = cv.height, cx = w * 0.68, cy = h * 0.52, R = Math.min(w, h) * 0.46
       ctx.fillStyle = '#04070a'; ctx.fillRect(0, 0, w, h)
       ctx.strokeStyle = 'rgba(57,255,122,0.12)'; for (let i = 1; i <= 4; i++) { ctx.beginPath(); ctx.arc(cx, cy, (R * i) / 4, 0, 7); ctx.stroke() }
       for (let i = 0; i < 12; i++) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos((i * Math.PI) / 6) * R, cy + Math.sin((i * Math.PI) / 6) * R); ctx.stroke() }
@@ -171,6 +175,7 @@ function Settings() {
     <div className="row"><span>VOLUME</span><input type="range" min={0} max={1} step={0.05} value={sv.settings.volume} onChange={(e) => set('volume', +e.target.value)} /></div>
     <div className="row"><span>RADIO VOICES</span><button onClick={() => set('voice', !sv.settings.voice)}>{sv.settings.voice ? 'ON' : 'OFF'}</button><button onClick={() => setVoice(true)}>ELEVENLABS VOICE…</button><span className="dim">{sv.settings.elevenKey ? 'ElevenLabs key saved' : 'Using browser voices'}</span></div>
     <div className="row"><span>ELEVENLABS</span><button disabled={!sv.settings.elevenKey} onClick={() => { sv.settings.elevenOn = !(sv.settings.elevenOn !== false); store.persist(); store.applyAudio(); audio.stopAll(); store.notify() }}>{sv.settings.elevenKey && sv.settings.elevenOn !== false ? 'ON' : 'OFF'}</button><span className="dim">{sv.settings.elevenKey ? 'When on, every radio line uses ElevenLabs' : 'Add a key with ELEVENLABS VOICE… first'}</span></div>
+    <div className="row"><span>GRAPHICS</span>{(['AUTO', 'HIGH', 'FAST'] as const).map((m) => <button key={m} className={(sv.settings.quality ?? 'AUTO') === m ? 'on' : ''} onClick={() => { sv.settings.quality = m; store.persist(); store.notify() }}>{m}</button>)}<span className="dim">AUTO keeps it smooth by lowering resolution only if your machine struggles</span></div>
     <div className="row"><span>RADAR SWEEP ANIMATION</span><button onClick={() => { sv.settings.sweep = !sv.settings.sweep; store.persist(); store.notify() }}>{sv.settings.sweep ? 'ON' : 'OFF'}</button></div>
     <div className="row"><span>SAM RANGE RINGS</span>{(['AUTO', 'ALL', 'OFF'] as const).map((m) => <button key={m} className={(sv.settings.samRings ?? 'AUTO') === m ? 'on' : ''} onClick={() => { sv.settings.samRings = m; store.persist(); store.notify() }}>{m}</button>)}<span className="dim">AUTO shows a ring only when a hostile is near it or the battery is selected</span></div>
     <div className="row"><span>SOUND EFFECTS</span><button onClick={() => set('sfx', !sv.settings.sfx)}>{sv.settings.sfx ? 'ON' : 'OFF'}</button></div>

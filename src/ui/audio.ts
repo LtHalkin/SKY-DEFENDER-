@@ -86,7 +86,7 @@ class AudioEngine {
       for (let attempt = 0; attempt < 4; attempt++) {
         try {
           const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${id}?output_format=mp3_44100_64`, { method: 'POST', headers: { 'xi-api-key': this.eleven.key, 'Content-Type': 'application/json', Accept: 'audio/mpeg' }, body: JSON.stringify({ text: txt, model_id: 'eleven_turbo_v2_5' }) })
-          if (r.ok) { const url = URL.createObjectURL(await r.blob()); this.cache.set(ck, url); this.elevenErr = ''; return url }
+          if (r.ok) { const url = URL.createObjectURL(await r.blob()); this.cache.set(ck, url); if (this.cache.size > 120) { const [k0, u0] = this.cache.entries().next().value!; this.cache.delete(k0); setTimeout(() => URL.revokeObjectURL(u0), 60000) } this.elevenErr = ''; return url }
           if (r.status === 401 || r.status === 403) { this.elevenErr = `ElevenLabs rejected the key (${r.status})`; return null }
           if (r.status === 400 || r.status === 422) { this.elevenErr = `ElevenLabs error ${r.status}`; return null }
           this.elevenErr = `ElevenLabs busy (${r.status}), retrying`

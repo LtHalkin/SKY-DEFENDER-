@@ -28,25 +28,23 @@ function plane(ctx: CanvasRenderingContext2D, x: number, y: number, hdg: number,
 const liveTracks = (st: GameState) => Object.values(st.tracks).filter((t) => !t.dropped && st.aircraft[t.entityId]?.kind !== 'asset')
 const samsInRange = (st: GameState, ent: Aircraft) => st.batteries.filter((b) => distNm(b, ent) <= b.range)
 
-function draw(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  const s = store.st; if (!s) return
-  ctx.fillStyle = '#05080b'; ctx.fillRect(0, 0, w, h)
-  const P = makeProj(w, h); const k = Math.max(1, h / 950)
+// ---- static map cache (land, coast, danger areas, airports): rebuilt only on zoom/resize/base changes ----
+const cache = { cv: null as HTMLCanvasElement | null, lat: 0, lon: 0, range: 0, w: 0, h: 0, dpr: 0, sig: '' }
+let lastView = '', lastViewChange = 0
+const MARGIN = 160 // css px of map rendered beyond each screen edge, so panning never reveals a blank edge
+function drawStatic(ctx: CanvasRenderingContext2D, s: GameState, w: number, h: number) {
+  // draw into a (w+2M)x(h+2M) surface centred on the same view
+  const P0 = makeProj(w, h); const k = Math.max(1, h / 950)
+  const P = { ...P0, x: (lon: number) => P0.x(lon) + MARGIN, y: (lat: number) => P0.y(lat) + MARGIN }
+  w += MARGIN * 2; h += MARGIN * 2
   ctx.font = `${12 * k}px "Lucida Console",monospace`
-  // land + coast
+  ctx.fillStyle = '#05080b'; ctx.fillRect(0, 0, w, h)
   ctx.fillStyle = '#0b1612'; ctx.beginPath()
   for (const poly of LAND) poly.forEach((p, i) => (i ? ctx.lineTo(P.x(p[0]), P.y(p[1])) : ctx.moveTo(P.x(p[0]), P.y(p[1]))))
   ctx.fill()
   ctx.strokeStyle = '#ff9a2e'; ctx.lineWidth = 1.5; ctx.beginPath()
   for (const line of COAST) line.forEach((p, i) => (i ? ctx.lineTo(P.x(p[0]), P.y(p[1])) : ctx.moveTo(P.x(p[0]), P.y(p[1]))))
   ctx.stroke()
-  // radar sweeps (operational ground stations)
-  if (store.save.settings.sweep) for (const r of s.radars) {
-    if (r.airborne || r.status === 'OFFLINE' || r.status === 'MAINTENANCE') continue
-    const x = P.x(r.lon), y = P.y(r.lat), R = r.primaryRange * P.pxPerNm(r.lat) * (r.status === 'DEGRADED' ? 0.55 : 1)
-    const g = ctx.createRadialGradient(x, y, 0, x, y, R); g.addColorStop(0, 'rgba(60,255,120,0.10)'); g.addColorStop(1, 'rgba(60,255,120,0)')
-    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, R, rad(r.angle - 90 - 18), rad(r.angle - 90)); ctx.closePath(); ctx.fill()
-  }
   for (const z of ZONES) { const x = P.x(z.lon), y = P.y(z.lat), r = z.r * P.pxPerNm(z.lat); ctx.fillStyle = 'rgba(170,20,20,0.28)'; ctx.strokeStyle = '#c33'; ctx.lineWidth = 1; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.strokeRect(x - r, y - r, r * 2, r * 2) }
   const seen = new Set<string>()
   for (const a of AIRPORTS) {
@@ -60,7 +58,42 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number) {
     if (a.kind === 'MIL') ctx.rect(x - 6 * k, y - 6 * k, 12 * k, 12 * k); else ctx.arc(x, y, 6 * k, 0, 7)
     ctx.stroke(); ctx.fillStyle = a.kind === 'MIL' ? '#8dffb0' : '#cfe3ff'; ctx.fillText((a.kind === 'MIL' ? a.name.replace('RAF ', '') + ' AB' : a.city).toUpperCase(), x + 10 * k, y + 4)
   }
-  // SAM batteries
+}
+function paintStatic(ctx: CanvasRenderingContext2D, s: GameState, w: number, h: number, dpr: number) {
+  const v = store.view, now = performance.now()
+  const vk = `${v.lat},${v.lon},${v.rangeNm}`
+  if (vk !== lastView) { lastView = vk; lastViewChange = now }
+  const sig = Object.values(s.assets).map((a) => a.baseId).sort().join() + Object.values(s.airfields).map((f) => (f.open ? 1 : 0)).join('')
+  const stale = !cache.cv || cache.range !== v.rangeNm || cache.w !== w || cache.h !== h || cache.dpr !== dpr || cache.sig !== sig
+  const moved = cache.lat !== v.lat || cache.lon !== v.lon
+  const P1 = makeProj(w, h)
+  const farOff = !!cache.cv && (Math.abs(P1.x(cache.lon) - w / 2) > MARGIN * 0.9 || Math.abs(P1.y(cache.lat) - h / 2) > MARGIN * 0.9)
+  if (stale || farOff || (moved && now - lastViewChange > 150)) {
+    cache.cv ??= document.createElement('canvas')
+    cache.cv.width = Math.round((w + MARGIN * 2) * dpr); cache.cv.height = Math.round((h + MARGIN * 2) * dpr)
+    const c = cache.cv.getContext('2d')!; c.setTransform(dpr, 0, 0, dpr, 0, 0)
+    drawStatic(c, s, w, h)
+    Object.assign(cache, { lat: v.lat, lon: v.lon, range: v.rangeNm, w, h, dpr, sig })
+  }
+  const P = makeProj(w, h)
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  const dx = Math.round((P.x(cache.lon) - w / 2 - MARGIN) * dpr), dy = Math.round((P.y(cache.lat) - h / 2 - MARGIN) * dpr)
+  ctx.drawImage(cache.cv!, dx, dy)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+
+function draw(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number) {
+  const s = store.st; if (!s) return
+  paintStatic(ctx, s, w, h, dpr)
+  const P = makeProj(w, h); const k = Math.max(1, h / 950)
+  ctx.font = `${12 * k}px "Lucida Console",monospace`
+  // radar sweeps (operational ground stations)
+  if (store.save.settings.sweep) for (const r of s.radars) {
+    if (r.airborne || r.status === 'OFFLINE' || r.status === 'MAINTENANCE') continue
+    const x = P.x(r.lon), y = P.y(r.lat), R = r.primaryRange * P.pxPerNm(r.lat) * (r.status === 'DEGRADED' ? 0.55 : 1)
+    const g = ctx.createRadialGradient(x, y, 0, x, y, R); g.addColorStop(0, 'rgba(60,255,120,0.10)'); g.addColorStop(1, 'rgba(60,255,120,0)')
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, R, rad(r.angle - 90 - 18), rad(r.angle - 90)); ctx.closePath(); ctx.fill()
+  }
   // SAM batteries: one marker per site; rings only when relevant (or as set in settings)
   const ringMode = store.save.settings.samRings ?? 'AUTO'
   const hostiles = Object.values(s.tracks).filter((t) => !t.dropped && t.hostile)
@@ -143,10 +176,34 @@ export function Game() {
   const { track: selT, asset: selA, battery: selB } = useStore((s) => s.sel)
 
   useEffect(() => {
-    const cv = ref.current!, ctx = cv.getContext('2d')!; let raf = 0, w = 0, h = 0, dpr = 1
-    const resize = () => { const r = wrap.current!.getBoundingClientRect(); dpr = Math.min(2, devicePixelRatio || 1); w = r.width; h = r.height; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px' }
+    const cv = ref.current!, ctx = cv.getContext('2d', { alpha: false })!; let raf = 0, w = 0, h = 0, dpr = 1
+    // adaptive resolution: AUTO lowers pixel density if redraws get slow on this machine
+    let auto = 0, slow = 0, fast = 0
+    const wantDpr = () => { const q = store.save.settings.quality ?? 'AUTO', full = Math.min(2, devicePixelRatio || 1); return q === 'HIGH' ? full : q === 'FAST' ? 1 : Math.max(1, full - auto * 0.5) }
+    const resize = () => { const r = wrap.current!.getBoundingClientRect(); dpr = wantDpr(); w = r.width; h = r.height; cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.width = w + 'px'; cv.style.height = h + 'px' }
     resize(); const ro = new ResizeObserver(resize); ro.observe(wrap.current!)
-    const frame = () => { raf = requestAnimationFrame(frame); hits = []; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); try { draw(ctx, w, h) } catch (e) { console.error(e) } }
+    let lastKey = '', lastDraw = 0
+    const frame = () => {
+      raf = requestAnimationFrame(frame)
+      const st2 = store.st; if (!st2) return
+      const now = performance.now()
+      if (wantDpr() !== dpr) resize()
+      const animating = store.fx.length > 0 || st2.missiles.length > 0 || store.save.settings.sweep
+      const key = `${st2.tick}|${store.view.lat},${store.view.lon},${store.view.rangeNm}|${w}x${h}|${Math.floor(now / 400) % 2}|${store.sel.track}${store.sel.asset}${store.sel.battery}|${!!store.pick}|${store.fx.length}`
+      const viewSettling = now - lastViewChange < 200
+      if (!animating && !viewSettling && key === lastKey) return // nothing on screen changed
+      if (!animating && !viewSettling && now - lastDraw < 30) return // cap static-ish redraws at ~30 fps
+      lastKey = key; hits = []
+      const t0 = performance.now()
+      try { draw(ctx, w, h, dpr) } catch (e) { console.error(e) }
+      const cost = performance.now() - t0 + (lastDraw ? 0 : 0)
+      lastDraw = now
+      if ((store.save.settings.quality ?? 'AUTO') === 'AUTO') {
+        if (cost > 14) { slow++; fast = 0 } else if (cost < 5) { fast++; slow = 0 }
+        if (slow > 20 && auto < 2 && (devicePixelRatio || 1) - auto * 0.5 > 1) { auto++; slow = 0 }
+        else if (fast > 400 && auto > 0) { auto--; fast = 0 }
+      }
+    }
     raf = requestAnimationFrame(frame); return () => { cancelAnimationFrame(raf); ro.disconnect() }
   }, [])
   const rect = () => wrap.current!.getBoundingClientRect()

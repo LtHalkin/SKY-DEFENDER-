@@ -6,7 +6,7 @@ export interface Save {
   v: 2; coins: number; xp: number
   fleet: Owned[]; batteries: OwnedBattery[]; upgrades: Record<string, number>
   stats: { shifts: number; splashes: number; ids: number; emergencies: number; best: number; breaches: number; coinsEarned: number; bestGrade: string; complied: number }
-  settings: { volume: number; voice: boolean; sfx: boolean; elevenKey: string; elevenOn: boolean; sweep: boolean; samRings: 'AUTO' | 'ALL' | 'OFF' }
+  settings: { volume: number; voice: boolean; sfx: boolean; elevenKey: string; elevenOn: boolean; sweep: boolean; samRings: 'AUTO' | 'ALL' | 'OFF'; quality?: 'AUTO' | 'HIGH' | 'FAST' }
   medals: string[]; tutorial: boolean; redeemed?: string[]; lastShift?: { grade: string; score: number; coins: number }
 }
 const KEY = 'sd.save.v2'
